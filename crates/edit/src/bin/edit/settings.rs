@@ -21,6 +21,8 @@ pub struct Settings {
     pub terminal_shell: Option<String>,
     /// Lines of scrollback each terminal keeps. `None` means the default.
     pub terminal_scrollback: Option<usize>,
+    /// Command that renders the Markdown preview. `None` means the default.
+    pub markdown_preview_command: Option<String>,
 }
 
 struct SettingsCell(SemiRefCell<Settings>);
@@ -44,6 +46,7 @@ impl Settings {
             theme: None,
             terminal_shell: None,
             terminal_scrollback: None,
+            markdown_preview_command: None,
         }
     }
 
@@ -125,6 +128,17 @@ impl Settings {
                 return Err(apperr::Error::SettingsInvalid("terminal.scrollback is out of range"));
             }
             self.terminal_scrollback = Some(scrollback as usize);
+        }
+
+        if let Some(command) = root.get("markdown.previewCommand") {
+            let Some(command) = command.as_str() else {
+                return Err(apperr::Error::SettingsInvalid(
+                    "markdown.previewCommand must be a string",
+                ));
+            };
+            if !command.trim().is_empty() {
+                self.markdown_preview_command = Some(command.to_string());
+            }
         }
 
         Ok(())

@@ -194,6 +194,16 @@ pub struct State {
     /// Set when a file with unsaved changes was also modified on disk.
     pub wants_reload_prompt: Option<ReloadPrompt>,
 
+    /// The external process rendering the Markdown preview, while it's open.
+    pub preview: Option<RcTerminal>,
+    /// The file handed to it, deleted when the preview closes.
+    pub preview_temp: Option<std::path::PathBuf>,
+    pub preview_wants_focus: bool,
+    /// Set to open the preview on the next frame.
+    pub wants_preview: bool,
+    /// Set when the preview command isn't installed.
+    pub wants_preview_missing: bool,
+
     /// The terminals in the panel, one per tab. The first is spawned the first
     /// time the panel is opened; the rest on request.
     pub terminals: Vec<RcTerminal>,
@@ -268,6 +278,12 @@ impl State {
             goto_invalid: false,
 
             wants_reload_prompt: None,
+
+            preview: None,
+            preview_temp: None,
+            preview_wants_focus: false,
+            wants_preview: false,
+            wants_preview_missing: false,
 
             terminals: Vec::new(),
             terminal_active: 0,

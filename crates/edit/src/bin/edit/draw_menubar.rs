@@ -189,6 +189,11 @@ fn draw_menu_view(ctx: &mut Context, state: &mut State) {
     if ctx.menubar_menu_button(loc(LocId::ViewTheme), 'T', vk::NULL) {
         state.wants_theme_picker = true;
     }
+    if state.documents.active().is_some()
+        && ctx.menubar_menu_button(loc(LocId::ViewMarkdownPreview), 'M', vk::F7)
+    {
+        crate::draw_preview::toggle_markdown_preview(state);
+    }
 
     ctx.menubar_menu_end();
 }

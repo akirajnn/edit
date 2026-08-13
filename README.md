@@ -94,6 +94,26 @@ Name | Description
 
 `foxpro` and `clipper` recreate the *syntax* colors of those environments. They can't reproduce the blue full-screen background those tools were known for: a theme only chooses colors for syntax, while the editor's own background comes from the terminal's palette.
 
+### Markdown preview
+
+<kbd>F7</kbd>, or **View → Markdown Preview**, renders the current buffer in a popup.
+
+The editor doesn't render Markdown itself; it runs [`glow`](https://github.com/charmbracelet/glow) in a pseudo console and shows the result, so the preview is exactly what that tool produces — colors, styled headings and all. Any other renderer works just as well:
+
+```jsonc
+"markdown.previewCommand": "mdcat"
+```
+
+What gets previewed is the buffer, not the file on disk, so unsaved edits and untitled buffers preview fine. <kbd>F7</kbd> again closes it.
+
+`glow` isn't bundled. If it isn't installed the popup explains how to get it:
+
+```powershell
+winget install charmbracelet.glow
+```
+
+Make sure it ends up on your `PATH`, or point `markdown.previewCommand` at it directly.
+
 ### More language definitions
 
 Added: **CSS**, **PHP**, and a dedicated **HTML** definition (previously `.html` fell back to the XML rules). `.htm` is recognised too.
@@ -136,7 +156,10 @@ Open it from **File → Preferences**.
   "terminal.shell": "pwsh.exe -NoLogo",
 
   // Lines of scrollback each terminal keeps. Defaults to 10000.
-  "terminal.scrollback": 5000
+  "terminal.scrollback": 5000,
+
+  // What renders the Markdown preview. Defaults to "glow -p".
+  "markdown.previewCommand": "glow -p -w 100"
 }
 ```
 

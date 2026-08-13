@@ -193,7 +193,12 @@ pub fn draw_terminal_shortcuts(ctx: &mut Context, state: &mut State) {
         return;
     };
 
-    if key == vk::F12 {
+    if key == vk::F7 {
+        // Handled here rather than in the preview module because this runs
+        // before any terminal widget, which would otherwise forward it to the
+        // process being previewed and leave no way to close the popup.
+        crate::draw_preview::toggle_markdown_preview(state);
+    } else if key == vk::F12 {
         toggle_terminal(state);
     } else if key == kbmod::SHIFT | vk::F12 {
         new_terminal(state);

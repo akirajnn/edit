@@ -7,6 +7,7 @@ mod documents;
 mod draw_editor;
 mod draw_filepicker;
 mod draw_menubar;
+mod draw_preview;
 mod draw_statusbar;
 mod draw_terminal;
 mod draw_theme;
@@ -202,9 +203,11 @@ fn run() -> apperr::Result<()> {
         }
 
         if state.exit {
-            // Kill the child before the terminal is handed back, so that it
-            // can't keep writing over whatever comes next.
+            // Kill the children before the terminal is handed back, so they
+            // can't keep writing over whatever comes next, and so the
+            // preview's temporary file doesn't outlive us.
             shutdown_terminal(&mut state);
+            draw_preview::close_markdown_preview(&mut state);
             break;
         }
 
@@ -412,6 +415,12 @@ fn draw(ctx: &mut Context, state: &mut State) {
     }
     if state.wants_reload_prompt.is_some() {
         draw_reload_prompt(ctx, state);
+    }
+    if state.wants_preview || state.preview.is_some() {
+        draw_preview::draw_markdown_preview(ctx, state);
+    }
+    if state.wants_preview_missing {
+        draw_preview::draw_preview_missing(ctx, state);
     }
     if ctx.clipboard_ref().wants_host_sync() {
         draw_handle_clipboard_change(ctx, state);
