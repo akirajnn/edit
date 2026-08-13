@@ -41,6 +41,9 @@ struct RegexSpan<'a> {
 struct Context<'a> {
     loop_start: Option<IRCell<'a>>,
     loop_exit: Option<IRCell<'a>>,
+    /// The register holding the input offset this loop iteration started at.
+    /// See [`Parser::parse_await`] for why `await input` has to reset it.
+    progress: Option<IRRegCell<'a>>,
     capture_groups: BVec<'a, (IRRegCell<'a>, IRRegCell<'a>)>,
 }
 
@@ -209,6 +212,7 @@ impl<'a, 'c, 'src> Parser<'a, 'c, 'src> {
             Context {
                 loop_start: Some(loop_start),
                 loop_exit: Some(loop_exit),
+                progress: Some(saved_offset),
                 capture_groups: BVec::empty(),
             },
         );
@@ -331,14 +335,14 @@ impl<'a, 'c, 'src> Parser<'a, 'c, 'src> {
             let re = self.parse_if_regex()?;
 
             // Push context with capture groups for the block
-            let (loop_start, loop_exit) = self
+            let (loop_start, loop_exit, progress) = self
                 .context
                 .last()
-                .map(|ctx| (ctx.loop_start, ctx.loop_exit))
-                .unwrap_or((None, None));
+                .map(|ctx| (ctx.loop_start, ctx.loop_exit, ctx.progress))
+                .unwrap_or((None, None, None));
             self.context.push(
                 self.compiler.arena,
-                Context { loop_start, loop_exit, capture_groups: re.capture_groups },
+                Context { loop_start, loop_exit, progress, capture_groups: re.capture_groups },
             );
             let bl = self.parse_block()?;
             self.context.pop();
@@ -489,8 +493,57 @@ impl<'a, 'c, 'src> Parser<'a, 'c, 'src> {
 
         self.expect(';')?;
 
-        let ir = self.compiler.alloc_iri(IRI::AwaitInput);
-        Ok(IRSpan::single(ir))
+        let await_input = self.compiler.alloc_iri(IRI::AwaitInput);
+
+        // Enclosing loops track "did this iteration consume anything" by
+        // saving the input offset at the top of the body and comparing against
+        // it at the bottom. Suspending here and resuming on the next line
+        // re-enters the body *below* that save, so the comparison would run
+        // against an offset from the previous line. When the new line happened
+        // to reach that same column without matching anything, the loop's
+        // built-in "advance by one" fired and skipped a character -- which is
+        // how a block comment could sail straight past its closing `*/` and
+        // swallow the rest of the file.
+        //
+        // `AwaitInput` suspends exactly when it's at end of line, and the
+        // offset is reset to 0 on resume, so the saved offsets can be zeroed
+        // ahead of the suspend under the same condition. A no-op await leaves
+        // them alone, keeping the mid-line behaviour untouched.
+        let mut progress_regs = BVec::empty();
+        for ctx in self.context.iter() {
+            if let Some(reg) = ctx.progress {
+                progress_regs.push(self.compiler.arena, reg);
+            }
+        }
+
+        if progress_regs.is_empty() {
+            return Ok(IRSpan::single(await_input));
+        }
+
+        let mut first_reset = None;
+        let mut last_reset: Option<IRCell<'a>> = None;
+
+        for &reg in progress_regs.iter() {
+            let reset = self.compiler.alloc_iri(IRI::MovImm { dst: reg, imm: 0 });
+            match last_reset {
+                None => first_reset = Some(reset),
+                Some(previous) => previous.borrow_mut().set_next(reset),
+            }
+            last_reset = Some(reset);
+        }
+
+        last_reset.unwrap().borrow_mut().set_next(await_input);
+
+        let guard = self.compiler.alloc_ir(IR {
+            next: Some(await_input),
+            instr: IRI::If {
+                condition: Condition::EndOfLine,
+                then: first_reset.unwrap(),
+            },
+            offset: usize::MAX,
+        });
+
+        Ok(IRSpan { first: guard, last: await_input })
     }
 
     fn parse_yield(&mut self) -> CompileResult<IRSpan<'a>> {

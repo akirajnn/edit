@@ -145,3 +145,107 @@ impl<'doc> Highlighter<'doc> {
         (line_beg, line_buf.leak())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use stdext::arena::scratch_arena;
+
+    use super::*;
+    use crate::lsh::LANGUAGES;
+
+    fn language(id: &str) -> &'static Language {
+        LANGUAGES.iter().find(|l| l.id == id).unwrap_or_else(|| panic!("no language {id:?}"))
+    }
+
+    /// Returns the highlight kind in effect at the *start* of each line.
+    ///
+    /// That's the signal for whether a multi-line construct on the previous
+    /// line was closed: a line that opens still inside a comment is one the
+    /// comment leaked into.
+    fn kind_at_line_start(source: &str, language_id: &str) -> Vec<HighlightKind> {
+        let bytes = source.as_bytes();
+        let doc: &dyn ReadableDocument = &bytes;
+        let mut highlighter = Highlighter::new(doc, language(language_id));
+        let mut out = Vec::new();
+        let mut line_start = 0usize;
+
+        for line in source.lines() {
+            let arena = scratch_arena(None);
+            let highlights = highlighter.parse_next_line(&arena);
+
+            // Highlights carry absolute offsets and are sorted, so the kind at
+            // a position is the last one that starts at or before it. Several
+            // may share an offset; the last of those wins.
+            let kind = highlights
+                .iter()
+                .take_while(|h| h.start <= line_start)
+                .last()
+                .map_or(HighlightKind::Other, |h| h.kind);
+
+            out.push(kind);
+            line_start += line.len() + 1;
+        }
+
+        out
+    }
+
+    /// A block comment that ends at the very end of a line used to swallow the
+    /// rest of the file: the loop's "did this iteration make progress" check
+    /// compared against an offset saved before `await input`, which is stale
+    /// once we're on a new line. When the closing `*/` happened to sit at that
+    /// same column, the built-in advance step skipped over it.
+    ///
+    /// That made it depend on the *length* of the comment, so these cases pair
+    /// an 8 character first line with a `*/` at column 8.
+    #[test]
+    fn block_comment_ending_a_line_does_not_leak() {
+        for language_id in ["rust", "javascript", "c", "cpp", "csharp", "java"] {
+            let kinds = kind_at_line_start("/* multi\n   line */\nnot_a_comment\n", language_id);
+
+            // Line 2 is inside the comment, which is the whole point of the setup.
+            assert_eq!(kinds[1], HighlightKind::Comment, "{language_id} line 2");
+            assert_ne!(
+                kinds[2],
+                HighlightKind::Comment,
+                "{language_id}: the comment leaked past its closing `*/`",
+            );
+        }
+    }
+
+    /// The same shape, but with the comment closing mid-line. This always
+    /// worked and is here to keep the fix from breaking it.
+    #[test]
+    fn block_comment_ending_mid_line_does_not_leak() {
+        let kinds = kind_at_line_start("/* multi\n   line */ x\nnot_a_comment\n", "rust");
+        assert_eq!(kinds[1], HighlightKind::Comment);
+        assert_ne!(kinds[2], HighlightKind::Comment);
+    }
+
+    /// Single line block comments never went through the suspend/resume path.
+    #[test]
+    fn single_line_block_comment_does_not_leak() {
+        let kinds = kind_at_line_start("/* one */\nnot_a_comment\n", "rust");
+        assert_ne!(kinds[1], HighlightKind::Comment);
+    }
+
+    /// The leak depended on the closing `*/` lining up with a stale offset, so
+    /// sweep the alignment rather than trusting one hand-picked case.
+    #[test]
+    fn block_comment_closes_at_every_alignment() {
+        for body in 1..24usize {
+            for indent in 0..12usize {
+                let source = format!(
+                    "/*{}\n{}*/\nnot_a_comment\n",
+                    "x".repeat(body),
+                    " ".repeat(indent)
+                );
+                let kinds = kind_at_line_start(&source, "rust");
+                assert_ne!(
+                    kinds[2],
+                    HighlightKind::Comment,
+                    "leaked with a {body} character body and {indent} spaces of indent",
+                );
+            }
+        }
+    }
+}

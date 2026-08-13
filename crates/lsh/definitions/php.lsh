@@ -35,27 +35,18 @@ pub fn php() {
 
 /// Everything between `<?php` and `?>`.
 fn php_code() {
-    loop {
+    until /\?>/ {
         yield other;
-
-        if /\?>/ {
-            break;
-        }
+        await input;
 
         if /\/\*/ {
-            // See the note in css.lsh: the loop body has to consume something
-            // itself rather than relying on the built-in advance step, which
-            // uses an offset from before the last `await input`.
             loop {
                 yield comment;
+                await input;
                 if /\*\// {
                     yield comment;
                     break;
                 }
-                if /[^*]+/ {
-                } else if /\*/ {
-                }
-                await input;
             }
         } else if /(?:\/\/|#).*/ {
             yield comment;
@@ -106,14 +97,7 @@ fn php_code() {
             yield storage.type;
         } else if /\w+/ {
             // Align the next iteration on a word boundary.
-        } else if /[^\s?]+/ {
-            // Punctuation. Consuming it explicitly keeps the loop moving
-            // without the built-in advance step, and stopping before `?`
-            // leaves the closing `?>` for the check at the top.
-        } else if /\s+/ {
         }
-
-        await input;
     }
 
     yield keyword.other;
@@ -127,6 +111,7 @@ fn php_tag_attributes() {
         await input;
 
         if /<\?(?:php\>|=)?/ {
+            // A `<?php ... ?>` block can appear inside a tag's attributes.
             yield keyword.other;
             php_code();
         } else if /([\w:.@-]+)\s*=/ {

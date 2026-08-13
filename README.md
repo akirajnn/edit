@@ -123,7 +123,7 @@ The value of a file association is a language id, not a display name. The availa
 
 * The terminal panel is Windows only (see above).
 * If the editor is force-killed rather than exited normally, terminal child processes can outlive it. A normal exit reaps them.
-* Some language definitions lose highlighting for the rest of the file after a multi-line block comment, depending on where the closing `*/` lands. This is a bug in the highlighter runtime that affects the upstream definitions (C, C++, C#, Java, JavaScript, Rust, …). The CSS, PHP, and HTML definitions added here work around it.
+* Markdown only highlights fenced code for a fixed set of languages, which does not include Rust.
 
 ## Installation
 

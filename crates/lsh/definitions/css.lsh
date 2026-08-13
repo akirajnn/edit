@@ -5,22 +5,7 @@ pub fn css() {
         yield other;
 
         if /\/\*/ {
-            // NOTE: The body consumes explicitly instead of leaning on the
-            // loop's built-in "advance if nothing matched" step. That step
-            // compares against an offset saved before `await input`, which is
-            // stale once we're on a new line, and skips a character whenever
-            // the closing `*/` happens to land on that same column.
-            loop {
-                yield comment;
-                if /\*\// {
-                    yield comment;
-                    break;
-                }
-                if /[^*]+/ {
-                } else if /\*/ {
-                }
-                await input;
-            }
+            block_comment();
         } else if /@[\w-]+/ {
             // At-rules: @media, @import, @keyframes, ...
             yield keyword.control;
@@ -47,12 +32,9 @@ pub fn css() {
 /// The body of a rule, where the language switches from selectors to
 /// property/value pairs.
 fn declarations() {
-    loop {
+    until /\}/ {
         yield other;
-
-        if /\}/ {
-            break;
-        }
+        await input;
 
         if /\/\*/ {
             block_comment();
@@ -76,14 +58,9 @@ fn declarations() {
         } else if /\$?[\w-]+/ {
             // Keyword values such as `block`, `none` or `inherit`.
             yield constant.language;
-        } else if /\s+/ {
-        } else if /[^}]/ {
-            // Punctuation, one character at a time, so the loop always makes
-            // progress. Stops before `}` so the check above sees it.
         }
 
         yield other;
-        await input;
     }
 
     yield other;
@@ -92,14 +69,11 @@ fn declarations() {
 fn block_comment() {
     loop {
         yield comment;
+        await input;
         if /\*\// {
             yield comment;
             break;
         }
-        if /[^*]+/ {
-        } else if /\*/ {
-        }
-        await input;
     }
 }
 

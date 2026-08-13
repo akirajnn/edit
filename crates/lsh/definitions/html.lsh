@@ -6,17 +6,13 @@ pub fn html() {
         yield other;
 
         if /<!--/ {
-            // See the note in css.lsh for why the body consumes explicitly.
             loop {
                 yield comment;
+                await input;
                 if /-->/ {
                     yield comment;
                     break;
                 }
-                if /[^-]+/ {
-                } else if /-/ {
-                }
-                await input;
             }
         } else if /<!(?i:DOCTYPE)[^>]*>/ {
             yield constant.language;
@@ -47,12 +43,9 @@ pub fn html() {
 
 /// Consumes attributes up to and including the closing `>` of a tag.
 fn tag_attributes() {
-    loop {
+    until />/ {
         yield other;
-
-        if />/ {
-            break;
-        }
+        await input;
 
         if /([\w:.@-]+)\s*=/ {
             yield $1 as variable;
@@ -72,13 +65,7 @@ fn tag_attributes() {
         } else if /[^\s"'=<>`]+/ {
             // HTML, unlike XML, allows unquoted attribute values.
             yield string;
-        } else if /\s+/ {
-        } else if /[^>]/ {
-            // Anything else, one character at a time, so that the loop always
-            // makes progress. Stops before `>` so the check above sees it.
         }
-
-        await input;
     }
 
     yield other;
