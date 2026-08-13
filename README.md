@@ -62,7 +62,17 @@ Highlighting colors are configurable. Pick one from **View → Color Theme** —
 
 Themes map syntax to the terminal's own 16 palette colors rather than fixed RGB, so the editor keeps looking like it belongs in your terminal's color scheme.
 
-Built-in themes: `default`, `high-contrast`, `muted`.
+Built-in themes:
+
+Name | Description
+--- | ---
+`default` | The colors the editor has always used.
+`high-contrast` | The bright half of the palette throughout.
+`muted` | Only comments and literals are tinted; code stays the default color.
+`foxpro` | After Visual FoxPro's editor: green comments, blue keywords, dark red strings.
+`clipper` | The Borland/Turbo palette Clipper work was written in: yellow body text, white keywords, cyan strings, grey comments.
+
+`foxpro` and `clipper` recreate the *syntax* colors of those environments. They can't reproduce the blue full-screen background those tools were known for: a theme only chooses colors for syntax, while the editor's own background comes from the terminal's palette.
 
 ### More language definitions
 

@@ -98,6 +98,58 @@ pub static BUILTIN: &[(&str, Theme)] = &[
             StorageType => BrightBlue,
         },
     ),
+    // After Visual FoxPro's editor: green comments, blue keywords, dark red
+    // strings, red operators.
+    //
+    // VFP drew keywords in the dark `Blue`, which was fine against its white
+    // background but is close to unreadable on the dark terminals most people
+    // use now, so the keyword colors are the bright variants here. Everything
+    // else keeps the original relationships.
+    (
+        "foxpro",
+        theme! {
+            Comment => Green,
+            String => Red,
+            ConstantNumeric => Red,
+            KeywordControl => BrightBlue,
+            KeywordOther => BrightBlue,
+            KeywordPreprocessor => BrightMagenta,
+            ConstantLanguage => BrightBlue,
+            StorageType => BrightBlue,
+            StorageAnnotation => BrightMagenta,
+            Method => BrightCyan,
+            MarkupChanged => BrightBlue,
+            MarkupDeleted => Red,
+            MarkupHeading => BrightBlue,
+            MarkupInserted => Green,
+            MarkupList => BrightBlue,
+            MetaHeader => BrightBlue,
+        },
+    ),
+    // The Borland/Turbo palette that Clipper work was written in: yellow body
+    // text, white keywords, cyan strings and grey comments.
+    (
+        "clipper",
+        theme! {
+            Comment => BrightBlack,
+            String => BrightCyan,
+            ConstantNumeric => BrightGreen,
+            KeywordControl => BrightWhite,
+            KeywordOther => BrightWhite,
+            KeywordPreprocessor => BrightMagenta,
+            ConstantLanguage => BrightMagenta,
+            StorageType => BrightWhite,
+            StorageAnnotation => BrightMagenta,
+            Method => BrightYellow,
+            Variable => Yellow,
+            MarkupChanged => BrightCyan,
+            MarkupDeleted => BrightRed,
+            MarkupHeading => BrightWhite,
+            MarkupInserted => BrightGreen,
+            MarkupList => BrightCyan,
+            MetaHeader => BrightWhite,
+        },
+    ),
     // Only comments and literals are tinted; code stays the default color.
     (
         "muted",
