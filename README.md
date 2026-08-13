@@ -247,9 +247,22 @@ You can install the latest version with Homebrew:
 brew install msedit
 ```
 
+## Requirements
+
+Software | Needed for | Install
+--- | --- | ---
+[Rust](https://www.rust-lang.org/tools/install) 1.93 or newer | Building. Older toolchains fail on the 2024 edition features this uses. | `winget install Rustlang.Rustup`
+Visual Studio C++ build tools | Linking on Windows. Rust's default `x86_64-pc-windows-msvc` toolchain uses the MSVC linker; rustup offers to install these for you if they're missing. | `winget install Microsoft.VisualStudio.2022.BuildTools`
+[git](https://git-scm.com/downloads) | Cloning this fork. | `winget install Git.Git`
+[glow](https://github.com/charmbracelet/glow) | The Markdown preview (<kbd>F7</kbd>). **Optional** — everything else works without it, and the preview tells you if it's missing. | `winget install charmbracelet.glow`
+
+The terminal panel needs nothing extra: it's built on ConPTY, which is part of Windows. On Linux you additionally need a C compiler, and ICU if you want Search and Replace — see [Notes to Package Maintainers](#icu-library-name-soname).
+
+> [!TIP]
+> After installing anything with WinGet, open a **new** terminal before checking. `PATH` changes don't reach shells that are already running, which looks exactly like the install having failed.
+
 ## Build Instructions
 
-* [Install Rust](https://www.rust-lang.org/tools/install)
 * Clone this fork:
   ```sh
   git clone https://github.com/akirajnn/edit.git
