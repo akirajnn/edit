@@ -42,7 +42,9 @@ Key | Action
 
 Terminals disagree about which modified arrow keys they pass through, so the panel accepts two combinations for resizing and the **Terminal** menu carries the same commands for when neither arrives.
 
-While the panel has focus, almost every key goes to the child process; the shortcuts above are the exceptions. Use <kbd>F6</kbd> to get back to the editor. The mouse wheel scrolls the terminal's scrollback unless the application asked for mouse reporting. When a child exits, its tab stays open so you can read what it printed; <kbd>Enter</kbd> closes it.
+While the panel has focus, almost every key goes to the child process; the shortcuts above are the exceptions. Use <kbd>F6</kbd> to get back to the editor. The mouse wheel scrolls the terminal's scrollback unless the application asked for mouse reporting.
+
+When a child exits its tab stays open so you can read what it printed, and since there is no longer anything to type at, <kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>PgUp</kbd>/<kbd>PgDn</kbd> and <kbd>Home</kbd>/<kbd>End</kbd> scroll back through the output — useful for a build that scrolled past. <kbd>Enter</kbd> closes the tab.
 
 The same commands are available from the **Terminal** menu.
 
@@ -178,6 +180,11 @@ Terminal panel:
 * Windows only (see above).
 * Every tab runs the same `terminal.shell`; a tab can't be given its own command.
 * A hidden tab isn't resized until you switch to it.
+
+Markdown preview:
+
+* Needs an external renderer; `glow` is not bundled.
+* It renders once. Editing the buffer doesn't update an open preview — close and reopen it with <kbd>F7</kbd> twice.
 
 Syntax highlighting:
 
