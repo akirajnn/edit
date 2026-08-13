@@ -209,6 +209,18 @@ pub fn draw_dialog_about(ctx: &mut Context, state: &mut State) {
             ctx.attr_overflow(Overflow::TruncateTail);
             ctx.attr_position(Position::Center);
 
+            // This is a fork, so say so. The lines above stay as they are:
+            // the editor is still Microsoft's work under the MIT license.
+            ctx.label("spacer", "");
+
+            ctx.label("fork", "Fork for Rust and AI CLI workflows");
+            ctx.attr_overflow(Overflow::TruncateTail);
+            ctx.attr_position(Position::Center);
+
+            ctx.label("fork-url", "github.com/akirajnn/edit");
+            ctx.attr_overflow(Overflow::TruncateHead);
+            ctx.attr_position(Position::Center);
+
             ctx.block_begin("choices");
             ctx.inherit_focus();
             ctx.attr_padding(Rect::three(1, 2, 0));
