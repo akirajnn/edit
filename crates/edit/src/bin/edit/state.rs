@@ -15,6 +15,7 @@ use edit::tui::*;
 use edit::{buffer, icu};
 
 use crate::apperr;
+use crate::diff::DiffResult;
 use crate::documents::DocumentManager;
 use crate::localization::*;
 
@@ -132,6 +133,15 @@ pub struct OscTitleFileStatus {
     pub dirty: bool,
 }
 
+/// A pending "this file changed under you" question.
+///
+/// The diff is computed once when the conflict is noticed and carried here,
+/// rather than recomputed for every frame the dialog is on screen.
+pub struct ReloadPrompt {
+    pub filename: String,
+    pub diff: DiffResult,
+}
+
 pub struct State {
     pub menubar_color_bg: StraightRgba,
     pub menubar_color_fg: StraightRgba,
@@ -182,8 +192,7 @@ pub struct State {
     pub goto_invalid: bool,
 
     /// Set when a file with unsaved changes was also modified on disk.
-    /// Holds the document's filename, purely so the dialog can name it.
-    pub wants_reload_prompt: Option<String>,
+    pub wants_reload_prompt: Option<ReloadPrompt>,
 
     /// The terminals in the panel, one per tab. The first is spawned the first
     /// time the panel is opened; the rest on request.

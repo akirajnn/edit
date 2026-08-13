@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 mod apperr;
+mod diff;
 mod documents;
 mod draw_editor;
 mod draw_filepicker;
@@ -747,3 +748,4 @@ fn setup_terminal(tui: &mut Tui, state: &mut State, vt_parser: &mut vt::Parser) 
 
     RestoreModes
 }
+

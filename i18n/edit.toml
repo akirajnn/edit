@@ -2369,3 +2369,87 @@ pt-br = "Fechar terminal"
 ru = "Закрыть терминал"
 zh-hans = "关闭终端"
 zh-hant = "關閉終端機"
+
+# Explains which side of the diff is which in the file changed dialog
+[FileChangedLegend]
+en = "-  your version        +  on disk"
+de = "-  Ihre Version        +  auf dem Datenträger"
+es = "-  tu versión          +  en disco"
+fr = "-  votre version       +  sur le disque"
+it = "-  la tua versione     +  su disco"
+ja = "-  あなたの版          +  ディスク上"
+ko = "-  내 버전             +  디스크"
+pt-br = "-  sua versão          +  em disco"
+ru = "-  ваша версия         +  на диске"
+zh-hans = "-  你的版本            +  磁盘上的版本"
+zh-hant = "-  你的版本            +  磁碟上的版本"
+
+# Replaces a run of unchanged lines in the diff. {count} is the number of lines.
+[FileChangedSkipped]
+en = "… {count} unchanged lines …"
+de = "… {count} unveränderte Zeilen …"
+es = "… {count} líneas sin cambios …"
+fr = "… {count} lignes inchangées …"
+it = "… {count} righe invariate …"
+ja = "… 変更のない {count} 行 …"
+ko = "… 변경되지 않은 {count}줄 …"
+pt-br = "… {count} linhas inalteradas …"
+ru = "… {count} строк без изменений …"
+zh-hans = "… 略过 {count} 行未变更 …"
+zh-hant = "… 略過 {count} 行未變更 …"
+
+# Shown instead of a diff when the change is too large to list line by line
+[FileChangedSummary]
+en = "{removed} lines replaced by {added}, too different to show"
+de = "{removed} Zeilen durch {added} ersetzt, zu unterschiedlich zur Anzeige"
+es = "{removed} líneas reemplazadas por {added}, demasiado distintas para mostrar"
+fr = "{removed} lignes remplacées par {added}, trop différentes à afficher"
+it = "{removed} righe sostituite da {added}, troppo diverse da mostrare"
+ja = "{removed} 行が {added} 行に置き換えられました（差分表示は省略）"
+ko = "{removed}줄이 {added}줄로 바뀌었습니다 (차이가 너무 커서 생략)"
+pt-br = "{removed} linhas substituídas por {added}, diferentes demais para exibir"
+ru = "{removed} строк заменено на {added}, слишком много различий"
+zh-hans = "{removed} 行被 {added} 行取代，差异过大不予显示"
+zh-hant = "{removed} 行被 {added} 行取代，差異過大不予顯示"
+
+# Shown instead of a diff when the file is too big to compare
+[FileChangedTooLarge]
+en = "The file is too large to preview the changes."
+de = "Die Datei ist zu groß für eine Vorschau der Änderungen."
+es = "El archivo es demasiado grande para previsualizar los cambios."
+fr = "Le fichier est trop volumineux pour prévisualiser les modifications."
+it = "Il file è troppo grande per l'anteprima delle modifiche."
+ja = "ファイルが大きすぎて変更をプレビューできません。"
+ko = "파일이 너무 커서 변경 내용을 미리 볼 수 없습니다."
+pt-br = "O arquivo é grande demais para pré-visualizar as alterações."
+ru = "Файл слишком велик для предварительного просмотра изменений."
+zh-hans = "文件过大，无法预览变更。"
+zh-hant = "檔案過大，無法預覽變更。"
+
+# Shown when the file was rewritten with identical contents
+[FileChangedIdentical]
+en = "The contents are identical."
+de = "Der Inhalt ist identisch."
+es = "El contenido es idéntico."
+fr = "Le contenu est identique."
+it = "Il contenuto è identico."
+ja = "内容は同一です。"
+ko = "내용이 동일합니다."
+pt-br = "O conteúdo é idêntico."
+ru = "Содержимое идентично."
+zh-hans = "内容完全相同。"
+zh-hant = "內容完全相同。"
+
+# Shown at the end of a diff that was cut short
+[FileChangedTruncated]
+en = "… more changes not shown …"
+de = "… weitere Änderungen nicht angezeigt …"
+es = "… más cambios no mostrados …"
+fr = "… autres modifications non affichées …"
+it = "… altre modifiche non mostrate …"
+ja = "… これ以降の変更は表示されません …"
+ko = "… 이후 변경 내용은 표시되지 않습니다 …"
+pt-br = "… mais alterações não exibidas …"
+ru = "… остальные изменения не показаны …"
+zh-hans = "… 其余变更未显示 …"
+zh-hant = "… 其餘變更未顯示 …"

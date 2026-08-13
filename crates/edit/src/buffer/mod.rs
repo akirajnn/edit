@@ -328,6 +328,15 @@ impl TextBuffer {
         self.buffer.len()
     }
 
+    /// Borrows the contents for reading.
+    ///
+    /// Unlike [`TextBuffer::save_as_string`] this has no side effects, which
+    /// matters for callers that only want to look at the text -- that one
+    /// marks the buffer clean on the way out.
+    pub fn as_document(&self) -> &dyn ReadableDocument {
+        &self.buffer
+    }
+
     /// Number of logical lines in the document,
     /// that is, lines separated by newlines.
     pub fn logical_line_count(&self) -> CoordType {

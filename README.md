@@ -52,7 +52,25 @@ The same commands are available from the **Terminal** menu.
 Files opened in the editor are watched for modifications made by anything else — a build script, `git`, or an agent running in the terminal panel.
 
 * A file with no unsaved changes is reloaded silently, keeping your cursor position.
-* A file with unsaved changes never changes under you. A dialog offers **Reload** or **Keep Mine**.
+* A file with unsaved changes never changes under you. A dialog shows what differs and offers **Reload** or **Keep Mine**.
+
+```
+┌─ File Changed ────────────────────────────────────┐
+│           demo.md was modified by another program │
+│      -  your version          +  on disk          │
+│ -MYEDIT ## Build Instructions                     │
+│ +## Build Instructions                            │
+│  * Install Rust                                   │
+│ -* Clone the repository                           │
+│ +* Clone this fork:                               │
+│ +  git clone https://github.com/akirajnn/edit.git │
+│  * Run cargo build                                │
+│ … 2 unchanged lines …                             │
+│            [Reload]      [Keep Mine]              │
+└───────────────────────────────────────────────────┘
+```
+
+In a conflict the diff is between *your* buffer and what's on disk, so `-` is what reloading would take away and `+` is what it would bring in — which is not the same as a `git diff`'s old and new. Long runs of unchanged lines are collapsed, and the colors follow the active theme.
 
 Watching costs nothing while idle: a background thread does the polling and only wakes the editor when something actually changed.
 
