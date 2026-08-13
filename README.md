@@ -8,8 +8,17 @@ This editor pays homage to the classic [MS-DOS Editor](https://en.wikipedia.org/
 
 > [!NOTE]
 > **This is a fork of [microsoft/edit](https://github.com/microsoft/edit).**
-> It adds an embedded terminal panel, external file change detection, syntax color themes, and a few more language definitions.
-> None of that is in the upstream releases, so the packages under [Installation](#installation) will **not** include these features — build from source instead.
+> Everything described below is added here and is not in the upstream releases, so the packages under [Installation](#installation) will **not** include it — build from source instead.
+
+## Why this fork exists
+
+I wanted to write .NET Core from the console — vibe coding, with an AI CLI sitting right next to the code instead of in another window — and to have that be fast, friendly and convenient rather than something I put up with.
+
+[microsoft/edit](https://github.com/microsoft/edit) is what made that look possible. It's the MS-DOS Editor rebuilt in Rust, and using it was a genuine surprise: it starts instantly, it stays out of the way, and it's the first editor in a long time that felt properly at home in a console. It seemed like the right thing to build on.
+
+So this fork is an attempt to grow it into something you can actually develop in — a light console IDE for .NET Core, TypeScript, or whatever I happen to be working in. Everything here started as something I wanted while working, not as a feature list: a terminal panel so a build and an agent can run beside the file I'm editing, detection of files changed behind my back, a Markdown preview, syntax colors I can live with. It's a personal tool first, and I use it every day.
+
+The one thing it isn't yet is properly cross-platform. Upstream runs on Windows, macOS and Linux; the terminal panel here is built on ConPTY and is Windows-only so far. That's the gap I'd most like to close.
 
 ## What this fork adds
 
@@ -20,13 +29,17 @@ A terminal panel along the bottom of the window, so you can build, run tests, or
 ```
 ┌────────────────────────────────────────────────────────┐
 │ File  Edit  View  Terminal  Help                       │
+├────────────────────────────────────────────────────────┤
 │  1 │ fn main() {                                       │
 │  2 │     println!("hi");                               │
+│  3 │                                                   │
+│  4 │                                                   │
 ├─ 1: cmd.exe   [2: ✳ Claude Code] ──────────────────────┤
 │ $ cargo run                                            │
 │ hi                                                     │
+│                                                        │
 ├────────────────────────────────────────────────────────┤
-│ Ln 2, Col 5              UTF-8              main.rs     │
+│ Ln 2, Col 5              UTF-8              main.rs    │
 └────────────────────────────────────────────────────────┘
 ```
 
