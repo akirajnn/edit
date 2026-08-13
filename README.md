@@ -267,7 +267,7 @@ The terminal panel needs nothing extra: it's built on ConPTY, which is part of W
   ```sh
   git clone https://github.com/akirajnn/edit.git
   cd edit
-  git switch feat/terminal-themes-and-file-watch
+  git switch RUST_dotnet_core_IDE
   ```
   The `main` branch tracks upstream and has none of the additions above.
 * If you're using nightly Rust:
