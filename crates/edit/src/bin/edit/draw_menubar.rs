@@ -53,6 +53,24 @@ fn draw_menu_terminal(ctx: &mut Context, state: &mut State) {
     {
         crate::draw_terminal::next_terminal(state);
     }
+    if state.terminal_visible {
+        // Also reachable with Ctrl+Shift or Alt+Shift plus an arrow key, but
+        // not every terminal forwards those, so they get menu entries too.
+        if ctx.menubar_menu_button(
+            loc(LocId::TerminalTaller),
+            'G',
+            kbmod::CTRL_SHIFT | vk::UP,
+        ) {
+            crate::draw_terminal::resize_terminal(ctx, state, 1);
+        }
+        if ctx.menubar_menu_button(
+            loc(LocId::TerminalShorter),
+            'S',
+            kbmod::CTRL_SHIFT | vk::DOWN,
+        ) {
+            crate::draw_terminal::resize_terminal(ctx, state, -1);
+        }
+    }
     if !state.terminals.is_empty() {
         if ctx.menubar_menu_button(loc(LocId::TerminalRestart), 'R', vk::NULL) {
             crate::draw_terminal::restart_terminal(state);

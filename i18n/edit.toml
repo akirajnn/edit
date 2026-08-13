@@ -2453,3 +2453,31 @@ pt-br = "… mais alterações não exibidas …"
 ru = "… остальные изменения не показаны …"
 zh-hans = "… 其余变更未显示 …"
 zh-hant = "… 其餘變更未顯示 …"
+
+# Menu item that makes the terminal panel taller
+[TerminalTaller]
+en = "Grow Panel"
+de = "Bereich höher"
+es = "Panel más alto"
+fr = "Panneau plus haut"
+it = "Pannello più alto"
+ja = "パネルを高く"
+ko = "패널 높이 늘리기"
+pt-br = "Painel mais alto"
+ru = "Увеличить панель"
+zh-hans = "面板变高"
+zh-hant = "面板變高"
+
+# Menu item that makes the terminal panel shorter
+[TerminalShorter]
+en = "Shrink Panel"
+de = "Bereich niedriger"
+es = "Panel más bajo"
+fr = "Panneau plus bas"
+it = "Pannello più basso"
+ja = "パネルを低く"
+ko = "패널 높이 줄이기"
+pt-br = "Painel mais baixo"
+ru = "Уменьшить панель"
+zh-hans = "面板变矮"
+zh-hant = "面板變矮"

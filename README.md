@@ -38,7 +38,9 @@ Key | Action
 <kbd>Shift</kbd>+<kbd>F12</kbd> | Open another terminal tab
 <kbd>Ctrl</kbd>+<kbd>F12</kbd> | Switch to the next tab
 <kbd>F6</kbd> | Move focus between the editor and the panel
-<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> | Make the panel taller or shorter
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> | Make the panel taller or shorter
+
+Terminals disagree about which modified arrow keys they pass through, so the panel accepts two combinations for resizing and the **Terminal** menu carries the same commands for when neither arrives.
 
 While the panel has focus, almost every key goes to the child process; the shortcuts above are the exceptions. Use <kbd>F6</kbd> to get back to the editor. The mouse wheel scrolls the terminal's scrollback unless the application asked for mouse reporting. When a child exits, its tab stays open so you can read what it printed; <kbd>Enter</kbd> closes it.
 

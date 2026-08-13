@@ -202,9 +202,12 @@ pub fn draw_terminal_shortcuts(ctx: &mut Context, state: &mut State) {
     } else if key == vk::F6 && state.terminal_visible {
         // The one key that always gets you back out of the panel.
         state.terminal_wants_focus = Some(!state.terminal_focused);
-    } else if key == kbmod::CTRL_SHIFT | vk::UP {
+    // Two bindings for the same thing because terminals disagree about which
+    // modified arrow keys they forward. Neither is guaranteed, which is why
+    // the Terminal menu carries these commands too.
+    } else if key == kbmod::CTRL_SHIFT | vk::UP || key == kbmod::ALT_SHIFT | vk::UP {
         resize_terminal(ctx, state, 1);
-    } else if key == kbmod::CTRL_SHIFT | vk::DOWN {
+    } else if key == kbmod::CTRL_SHIFT | vk::DOWN || key == kbmod::ALT_SHIFT | vk::DOWN {
         resize_terminal(ctx, state, -1);
     } else {
         return;
@@ -258,7 +261,7 @@ pub fn restart_terminal(state: &mut State) {
     new_terminal(state);
 }
 
-fn resize_terminal(ctx: &Context, state: &mut State, delta: CoordType) {
+pub fn resize_terminal(ctx: &Context, state: &mut State, delta: CoordType) {
     if !state.terminal_visible {
         return;
     }
