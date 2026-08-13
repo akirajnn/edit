@@ -29,6 +29,10 @@ struct State {
     // Buffer for incomplete UTF-8 sequences (max 4 bytes needed)
     utf8_buf: [u8; 4],
     utf8_len: usize,
+    /// Self-pipe used by `wake()` to interrupt a blocking `poll` in
+    /// `read_stdin`.  `[read_end, write_end]`; both are -1 until `init()`
+    /// creates the pipe.
+    wake_pipe: [libc::c_int; 2],
 }
 
 static mut STATE: State = State {
@@ -39,6 +43,7 @@ static mut STATE: State = State {
     inject_resize: false,
     utf8_buf: [0; 4],
     utf8_len: 0,
+    wake_pipe: [-1, -1],
 };
 
 extern "C" fn sigwinch_handler(_: libc::c_int) {
@@ -48,7 +53,40 @@ extern "C" fn sigwinch_handler(_: libc::c_int) {
 }
 
 pub fn init() -> Deinit {
+    unsafe {
+        let mut fds: [libc::c_int; 2] = [-1, -1];
+        if libc::pipe(fds.as_mut_ptr()) == 0 {
+            // O_CLOEXEC on both ends so they don't leak into child processes.
+            let flags = libc::fcntl(fds[0], libc::F_GETFD);
+            if flags >= 0 {
+                libc::fcntl(fds[0], libc::F_SETFD, flags | libc::FD_CLOEXEC);
+            }
+            let flags = libc::fcntl(fds[1], libc::F_GETFD);
+            if flags >= 0 {
+                libc::fcntl(fds[1], libc::F_SETFD, flags | libc::FD_CLOEXEC);
+            }
+            // Non-blocking write end so wake() never blocks.
+            let flags = libc::fcntl(fds[1], libc::F_GETFL);
+            if flags >= 0 {
+                libc::fcntl(fds[1], libc::F_SETFL, flags | libc::O_NONBLOCK);
+            }
+            STATE.wake_pipe = fds;
+        }
+    }
     Deinit
+}
+
+/// Interrupts a blocking [`read_stdin`] so that the caller redraws.
+///
+/// Safe to call from any thread; uses a self-pipe to wake `poll`.
+pub fn wake() {
+    unsafe {
+        let write_fd = STATE.wake_pipe[1];
+        if write_fd >= 0 {
+            let byte = 1u8;
+            libc::write(write_fd, &byte as *const u8 as *const _, 1);
+        }
+    }
 }
 
 /// Reopen stdin if it's redirected (= piped input).
@@ -140,6 +178,12 @@ impl Drop for Deinit {
                 // Restore the original terminal modes.
                 libc::tcsetattr(STATE.stdout, libc::TCSANOW, &termios);
             }
+            for fd in STATE.wake_pipe {
+                if fd >= 0 {
+                    libc::close(fd);
+                }
+            }
+            STATE.wake_pipe = [-1, -1];
         }
     }
 }
@@ -184,6 +228,9 @@ pub fn read_stdin(arena: &Arena, mut timeout: time::Duration) -> Option<BString<
         }
 
         let read_poll = timeout != time::Duration::MAX;
+        let wake_fd = STATE.wake_pipe[0];
+        // Use poll whenever we have a timeout OR a wake pipe to listen on.
+        let need_poll = read_poll || wake_fd >= 0;
         let mut buf = BVec::empty();
 
         // We don't know if the input is valid UTF8, so we first use a Vec and then
@@ -199,23 +246,39 @@ pub fn read_stdin(arena: &Arena, mut timeout: time::Duration) -> Option<BString<
         }
 
         loop {
-            if timeout != time::Duration::MAX {
+            if need_poll {
                 let beg = time::Instant::now();
+                let nfds = if wake_fd >= 0 { 2usize } else { 1usize };
+                let mut fds = [
+                    libc::pollfd { fd: STATE.stdin, events: libc::POLLIN, revents: 0 },
+                    libc::pollfd { fd: wake_fd, events: libc::POLLIN, revents: 0 },
+                ];
 
-                let mut pollfd = libc::pollfd { fd: STATE.stdin, events: libc::POLLIN, revents: 0 };
                 let ret;
-                #[cfg(target_os = "linux")]
-                {
-                    let ts = libc::timespec {
-                        tv_sec: timeout.as_secs() as libc::time_t,
-                        tv_nsec: timeout.subsec_nanos() as libc::c_long,
+                if nfds == 1 {
+                    // No wake pipe: keep original ppoll/poll behaviour.
+                    #[cfg(target_os = "linux")]
+                    {
+                        let ts = libc::timespec {
+                            tv_sec: timeout.as_secs() as libc::time_t,
+                            tv_nsec: timeout.subsec_nanos() as libc::c_long,
+                        };
+                        ret = libc::ppoll(fds.as_mut_ptr(), 1, &ts, std::ptr::null());
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        ret = libc::poll(fds.as_mut_ptr(), 1, timeout.as_millis() as libc::c_int);
+                    }
+                } else {
+                    // Two fds: always use poll; -1 means infinite when no timeout.
+                    let timeout_ms = if read_poll {
+                        timeout.as_millis() as libc::c_int
+                    } else {
+                        -1
                     };
-                    ret = libc::ppoll(&mut pollfd, 1, &ts, std::ptr::null());
+                    ret = libc::poll(fds.as_mut_ptr(), nfds as libc::nfds_t, timeout_ms);
                 }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    ret = libc::poll(&mut pollfd, 1, timeout.as_millis() as libc::c_int);
-                }
+
                 if ret < 0 {
                     return None; // Error? Let's assume it's an EOF.
                 }
@@ -223,12 +286,24 @@ pub fn read_stdin(arena: &Arena, mut timeout: time::Duration) -> Option<BString<
                     break; // Timeout? We can stop reading.
                 }
 
-                timeout = timeout.saturating_sub(beg.elapsed());
+                // Wake pipe fired: drain it.  If stdin also has data we fall
+                // through and read it; otherwise we break so the caller redraws.
+                if wake_fd >= 0 && (fds[1].revents & libc::POLLIN) != 0 {
+                    let mut drain = [0u8; 64];
+                    libc::read(wake_fd, drain.as_mut_ptr().cast(), drain.len());
+                    if (fds[0].revents & libc::POLLIN) == 0 {
+                        break;
+                    }
+                }
+
+                if read_poll {
+                    timeout = timeout.saturating_sub(beg.elapsed());
+                }
             };
 
             // If we're asked for a non-blocking read we need
             // to manipulate `O_NONBLOCK` and vice versa.
-            set_tty_nonblocking(read_poll);
+            set_tty_nonblocking(need_poll);
 
             // Read from stdin.
             let spare = buf.spare_capacity_mut();

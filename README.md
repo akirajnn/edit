@@ -61,8 +61,7 @@ When a child exits its tab stays open so you can read what it printed, and since
 
 The same commands are available from the **Terminal** menu.
 
-> [!IMPORTANT]
-> The terminal panel is **Windows only** for now. It is built on ConPTY; the Unix side is stubbed out and reports "unsupported".
+The terminal panel works on **Windows, macOS, and Linux**.  On Windows it uses ConPTY; on macOS and Linux it uses the POSIX PTY API (`posix_openpt` / `fork` / `exec`).
 
 ### External file change detection
 
@@ -190,9 +189,9 @@ The value of a file association is a language id, not a display name. The availa
 
 Terminal panel:
 
-* Windows only (see above).
 * Every tab runs the same `terminal.shell`; a tab can't be given its own command.
 * A hidden tab isn't resized until you switch to it.
+* The command string is split on whitespace to build the argument vector, so arguments that contain spaces must be passed through a shell invocation (e.g. `bash -c 'my command'` won't work as-is; use a wrapper script instead).
 
 Markdown preview:
 
