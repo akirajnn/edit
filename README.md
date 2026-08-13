@@ -267,9 +267,8 @@ The terminal panel needs nothing extra: it's built on ConPTY, which is part of W
   ```sh
   git clone https://github.com/akirajnn/edit.git
   cd edit
-  git switch RUST_dotnet_core_IDE
   ```
-  The `main` branch tracks upstream and has none of the additions above.
+  That puts you on `RUST_dotnet_core_IDE`, the default branch and the one everything above describes. The `main` branch tracks upstream and has none of it.
 * If you're using nightly Rust:
   ```sh
   cargo build --release --config .cargo/release.toml
