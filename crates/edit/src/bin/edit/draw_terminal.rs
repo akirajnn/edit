@@ -13,12 +13,15 @@ use std::rc::Rc;
 use edit::cell::SemiRefCell;
 use edit::helpers::*;
 use edit::input::{kbmod, vk};
+use edit::sys;
+use edit::terminal::screen::DEFAULT_SCROLLBACK;
 use edit::terminal::{RcTerminal, Terminal};
 use edit::tui::*;
 use stdext::arena_format;
 use stdext::collections::BString;
 
 use crate::localization::*;
+use crate::settings::Settings;
 use crate::state::*;
 
 /// Height of the panel's tab bar.
@@ -105,7 +108,15 @@ fn spawn_terminal(ctx: &mut Context, state: &mut State) -> bool {
     let cwd = state.file_picker_pending_dir.as_path();
     let cwd = if cwd.as_os_str().is_empty() { None } else { Some(cwd) };
 
-    match Terminal::spawn_shell(cwd, size) {
+    let (command, scrollback) = {
+        let settings = Settings::borrow();
+        (
+            settings.terminal_shell.clone().unwrap_or_else(sys::default_shell),
+            settings.terminal_scrollback.unwrap_or(DEFAULT_SCROLLBACK),
+        )
+    };
+
+    match Terminal::spawn(&command, cwd, size, scrollback) {
         Ok(terminal) => {
             state.terminals.push(Rc::new(SemiRefCell::new(terminal)));
             state.terminal_active = state.terminals.len() - 1;

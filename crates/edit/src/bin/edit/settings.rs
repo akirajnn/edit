@@ -17,6 +17,10 @@ pub struct Settings {
     pub theme_name: String,
     /// `None` until the settings are loaded; the built-in default applies then.
     pub theme: Option<Theme>,
+    /// Command line each terminal tab runs. `None` means the platform default.
+    pub terminal_shell: Option<String>,
+    /// Lines of scrollback each terminal keeps. `None` means the default.
+    pub terminal_scrollback: Option<usize>,
 }
 
 struct SettingsCell(SemiRefCell<Settings>);
@@ -38,6 +42,8 @@ impl Settings {
             file_associations: Vec::new(),
             theme_name: String::new(),
             theme: None,
+            terminal_shell: None,
+            terminal_scrollback: None,
         }
     }
 
@@ -100,9 +106,33 @@ impl Settings {
             self.theme = Some(resolve_theme(name, custom)?);
         }
 
+        if let Some(shell) = root.get("terminal.shell") {
+            let Some(shell) = shell.as_str() else {
+                return Err(apperr::Error::SettingsInvalid("terminal.shell must be a string"));
+            };
+            if !shell.trim().is_empty() {
+                self.terminal_shell = Some(shell.to_string());
+            }
+        }
+
+        if let Some(scrollback) = root.get("terminal.scrollback") {
+            let Some(scrollback) = scrollback.as_number() else {
+                return Err(apperr::Error::SettingsInvalid("terminal.scrollback must be a number"));
+            };
+            // A negative or absurd value would only show up much later as a
+            // strange scrollbar, so reject it where it can still be explained.
+            if !(0.0..=MAX_SCROLLBACK as f64).contains(&scrollback) {
+                return Err(apperr::Error::SettingsInvalid("terminal.scrollback is out of range"));
+            }
+            self.terminal_scrollback = Some(scrollback as usize);
+        }
+
         Ok(())
     }
 }
+
+/// Roughly 10x the default. Beyond this the memory cost stops being incidental.
+const MAX_SCROLLBACK: usize = 100_000;
 
 impl Settings {
     /// Writes the chosen theme back to `settings.json`.

@@ -110,7 +110,13 @@ Open it from **File → Preferences**.
   // Force a language for paths that aren't detected by extension.
   "files.associations": {
     "*.vue": "html"
-  }
+  },
+
+  // What each terminal tab runs. Defaults to %COMSPEC% (or $SHELL).
+  "terminal.shell": "pwsh.exe -NoLogo",
+
+  // Lines of scrollback each terminal keeps. Defaults to 10000.
+  "terminal.scrollback": 5000
 }
 ```
 
@@ -122,8 +128,7 @@ The value of a file association is a language id, not a display name. The availa
 ## Known limitations
 
 * The terminal panel is Windows only (see above).
-* If the editor is force-killed rather than exited normally, terminal child processes can outlive it. A normal exit reaps them.
-* Markdown only highlights fenced code for a fixed set of languages, which does not include Rust.
+* Markdown only highlights fenced code for a fixed set of languages: `sh`/`bash`, `diff`, `javascript`/`js`, `json`, `odin`, `py`/`python`, `rs`/`rust`, `yaml` and `pwsh`/`powershell`.
 
 ## Installation
 

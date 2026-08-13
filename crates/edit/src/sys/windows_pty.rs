@@ -27,13 +27,53 @@ use std::{io, mem};
 
 use windows_sys::Win32::Foundation;
 use windows_sys::Win32::Storage::FileSystem;
-use windows_sys::Win32::System::{Console, Pipes, Threading};
+use windows_sys::Win32::System::{Console, JobObjects, Pipes, Threading};
 
 use super::windows::{check_bool_return, last_os_error};
 use crate::helpers::*;
 
 /// The value `GetExitCodeProcess` reports while the process is still running.
 const STILL_ACTIVE: u32 = 259;
+
+/// Every child is put in this job, which is configured to kill its members
+/// when the last handle to it closes. Closing a [`Pty`] normally terminates its
+/// own child, but that only runs if we actually get to run: if the editor is
+/// killed or crashes, the handle goes away with the process and the kernel
+/// cleans up the shells for us. Without it they'd keep running invisibly.
+///
+/// The job is created once and never closed, so its lifetime is the process's.
+static mut JOB: Foundation::HANDLE = null_mut();
+static JOB_INIT: std::sync::Once = std::sync::Once::new();
+
+fn job() -> Foundation::HANDLE {
+    JOB_INIT.call_once(|| unsafe {
+        let handle = JobObjects::CreateJobObjectW(null(), null());
+        if handle.is_null() {
+            return;
+        }
+
+        let mut limits: JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION = mem::zeroed();
+        limits.BasicLimitInformation.LimitFlags = JobObjects::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+        let ok = JobObjects::SetInformationJobObject(
+            handle,
+            JobObjects::JobObjectExtendedLimitInformation,
+            &raw const limits as *const c_void,
+            mem::size_of::<JobObjects::JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        );
+
+        if ok == 0 {
+            // A job we can't configure is worse than none: it would still trap
+            // the children without the guarantee that they get cleaned up.
+            Foundation::CloseHandle(handle);
+            return;
+        }
+
+        JOB = handle;
+    });
+
+    unsafe { JOB }
+}
 
 /// A child process attached to a pseudo console.
 pub struct Pty {
@@ -174,6 +214,13 @@ impl Pty {
                 &startup_info.StartupInfo,
                 &mut process_info,
             ))?;
+
+            // Best effort: a child outside the job still works, it just won't
+            // be cleaned up if the editor dies without running its teardown.
+            let job = job();
+            if !job.is_null() {
+                JobObjects::AssignProcessToJobObject(job, process_info.hProcess);
+            }
 
             Ok((
                 Pty {
