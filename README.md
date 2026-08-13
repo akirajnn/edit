@@ -104,7 +104,10 @@ The editor doesn't render Markdown itself; it runs [`glow`](https://github.com/c
 "markdown.previewCommand": "mdcat"
 ```
 
-What gets previewed is the buffer, not the file on disk, so unsaved edits and untitled buffers preview fine. <kbd>F7</kbd> again closes it.
+What gets previewed is the buffer, not the file on disk, so unsaved edits and untitled buffers preview fine. <kbd>F7</kbd> again closes it, and <kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>PgUp</kbd>/<kbd>PgDn</kbd> and <kbd>Home</kbd>/<kbd>End</kbd> move through a long document.
+
+> [!NOTE]
+> The default command is `glow`, not `glow -p`. Glow's pager runs `less`, which Windows doesn't ship, so `-p` fails with `executable file not found in %PATH%`. Scrolling is handled by the editor instead.
 
 `glow` isn't bundled. If it isn't installed the popup explains how to get it:
 
@@ -158,8 +161,8 @@ Open it from **File → Preferences**.
   // Lines of scrollback each terminal keeps. Defaults to 10000.
   "terminal.scrollback": 5000,
 
-  // What renders the Markdown preview. Defaults to "glow -p".
-  "markdown.previewCommand": "glow -p -w 100"
+  // What renders the Markdown preview. Defaults to "glow".
+  "markdown.previewCommand": "glow -w 100 -s dark"
 }
 ```
 

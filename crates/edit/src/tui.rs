@@ -2375,10 +2375,30 @@ impl<'a> Context<'a, '_> {
             }
         }
 
-        // Once the child is gone there's nobody to type at. Swallowing keys
-        // here would also hide them from the panel, which wants to offer
-        // "press Enter to close". Scrolling the scrollback still works.
+        // Once the child is gone there's nobody to type at, but its output is
+        // still on screen and worth reading, so the keys that move through it
+        // keep working. Everything else is left for the panel, which wants to
+        // offer "press Enter to close".
         if !term.is_running() {
+            if let Some(key) = self.input_keyboard {
+                let page = node_prev.inner.height().max(1);
+                let delta = match key {
+                    key if key == vk::UP => 1,
+                    key if key == vk::DOWN => -1,
+                    key if key == vk::PRIOR => page,
+                    key if key == vk::NEXT => -page,
+                    // Far enough to reach the top of any scrollback.
+                    key if key == vk::HOME => CoordType::MAX / 2,
+                    key if key == vk::END => CoordType::MIN / 2,
+                    _ => 0,
+                };
+
+                if delta != 0 {
+                    term.screen_mut().scroll_view(delta);
+                    self.set_input_consumed();
+                    dirty = true;
+                }
+            }
             return dirty;
         }
 

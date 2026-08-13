@@ -23,9 +23,10 @@ use crate::state::*;
 
 /// Used when `markdown.previewCommand` isn't set.
 ///
-/// The pager keeps the process alive so its own scrolling works, rather than
-/// leaving us with a wall of text and no way to move through it.
-pub const DEFAULT_PREVIEW_COMMAND: &str = "glow -p";
+/// Deliberately without glow's `-p`: its pager shells out to `less`, which
+/// Windows doesn't have, so the popup would show glow's error instead of the
+/// document. Scrolling is handled on our side once the command exits.
+pub const DEFAULT_PREVIEW_COMMAND: &str = "glow";
 
 /// Opens the preview, or closes it if it's already open.
 pub fn toggle_markdown_preview(state: &mut State) {
