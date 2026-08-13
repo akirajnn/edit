@@ -76,7 +76,7 @@ fn php_code() {
             yield variable;
         } else if /(?:break|case|catch|continue|declare|default|do|else|elseif|endfor|endforeach|endif|endswitch|endwhile|finally|for|foreach|goto|if|match|return|switch|throw|try|while)\>/ {
             yield keyword.control;
-        } else if /(?:abstract|and|array|as|callable|class|clone|const|enum|extends|final|fn|function|global|implements|include_once|include|instanceof|insteadof|interface|list|namespace|new|or|print|private|protected|public|readonly|require_once|require|static|trait|unset|use|var|xor|yield)\>/ {
+        } else if /(?:abstract|and|array|as|callable|class|clone|const|echo|empty|enum|extends|final|fn|function|global|implements|include_once|include|instanceof|insteadof|interface|isset|list|namespace|new|or|print|private|protected|public|readonly|require_once|require|static|trait|unset|use|var|xor|yield)\>/ {
             yield keyword.other;
         } else if /(?i:true|false|null)\>/ {
             yield constant.language;

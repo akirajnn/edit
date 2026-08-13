@@ -127,8 +127,18 @@ The value of a file association is a language id, not a display name. The availa
 
 ## Known limitations
 
-* The terminal panel is Windows only (see above).
+Terminal panel:
+
+* Windows only (see above).
+* Every tab runs the same `terminal.shell`; a tab can't be given its own command.
+* A hidden tab isn't resized until you switch to it.
+
+Syntax highlighting:
+
 * Markdown only highlights fenced code for a fixed set of languages: `sh`/`bash`, `diff`, `javascript`/`js`, `json`, `odin`, `py`/`python`, `rs`/`rust`, `yaml` and `pwsh`/`powershell`.
+* CSS treats the inside of a nested at-rule as declarations, so the selectors in `@media screen { .card { … } }` are colored as values rather than selectors. Top level rules are fine.
+* PHP doesn't understand heredoc/nowdoc (`<<<EOT`); the body is left uncolored.
+* HTML looks for `</script>` and `</style>` at the start of a line, so a one-line `<script>f()</script>` keeps script highlighting to the end of that line.
 
 ## Installation
 
@@ -174,7 +184,13 @@ brew install msedit
 ## Build Instructions
 
 * [Install Rust](https://www.rust-lang.org/tools/install)
-* Clone the repository
+* Clone this fork:
+  ```sh
+  git clone https://github.com/akirajnn/edit.git
+  cd edit
+  git switch feat/terminal-themes-and-file-watch
+  ```
+  The `main` branch tracks upstream and has none of the additions above.
 * If you're using nightly Rust:
   ```sh
   cargo build --release --config .cargo/release.toml
