@@ -31,11 +31,37 @@ pub fn draw_menubar(ctx: &mut Context, state: &mut State) {
                 draw_menu_view(ctx, state);
             }
         }
+        if ctx.menubar_menu_begin(loc(LocId::Terminal), 'T') {
+            draw_menu_terminal(ctx, state);
+        }
         if ctx.menubar_menu_begin(loc(LocId::Help), 'H') {
             draw_menu_help(ctx, state);
         }
     }
     ctx.menubar_end();
+}
+
+fn draw_menu_terminal(ctx: &mut Context, state: &mut State) {
+    if ctx.menubar_menu_button(loc(LocId::TerminalToggle), 'T', vk::F12) {
+        crate::draw_terminal::toggle_terminal(state);
+    }
+    if ctx.menubar_menu_button(loc(LocId::TerminalNew), 'N', kbmod::SHIFT | vk::F12) {
+        crate::draw_terminal::new_terminal(state);
+    }
+    if state.terminals.len() > 1
+        && ctx.menubar_menu_button(loc(LocId::TerminalNext), 'X', kbmod::CTRL | vk::F12)
+    {
+        crate::draw_terminal::next_terminal(state);
+    }
+    if !state.terminals.is_empty() {
+        if ctx.menubar_menu_button(loc(LocId::TerminalRestart), 'R', vk::NULL) {
+            crate::draw_terminal::restart_terminal(state);
+        }
+        if ctx.menubar_menu_button(loc(LocId::TerminalClose), 'C', vk::NULL) {
+            crate::draw_terminal::close_active_terminal(state);
+        }
+    }
+    ctx.menubar_menu_end();
 }
 
 fn draw_menu_file(ctx: &mut Context, state: &mut State) {
@@ -140,6 +166,10 @@ fn draw_menu_view(ctx: &mut Context, state: &mut State) {
             tb.set_word_wrap(!word_wrap);
             ctx.needs_rerender();
         }
+    }
+
+    if ctx.menubar_menu_button(loc(LocId::ViewTheme), 'T', vk::NULL) {
+        state.wants_theme_picker = true;
     }
 
     ctx.menubar_menu_end();

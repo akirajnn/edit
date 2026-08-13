@@ -2186,3 +2186,186 @@ uk = "Файл вже існує. Перезаписати?"
 vi = "Tệp đã tồn tại. Bạn có muốn ghi đè không?"
 zh-hans = "文件已存在。要覆盖它吗？"
 zh-hant = "檔案已存在。要覆寫嗎？"
+
+# The "Terminal" menu, and the embedded terminal panel
+[Terminal]
+en = "Terminal"
+de = "Terminal"
+es = "Terminal"
+fr = "Terminal"
+it = "Terminale"
+ja = "ターミナル"
+ko = "터미널"
+pt-br = "Terminal"
+ru = "Терминал"
+zh-hans = "终端"
+zh-hant = "終端機"
+
+# Menu item that shows or hides the terminal panel
+[TerminalToggle]
+en = "Toggle Panel"
+de = "Bereich umschalten"
+es = "Mostrar u ocultar panel"
+fr = "Afficher/masquer le panneau"
+it = "Mostra/nascondi pannello"
+ja = "パネルの表示切り替え"
+ko = "패널 표시/숨기기"
+pt-br = "Alternar painel"
+ru = "Показать/скрыть панель"
+zh-hans = "切换面板"
+zh-hant = "切換面板"
+
+# Menu item that restarts the shell in the terminal panel
+[TerminalRestart]
+en = "Restart Shell"
+de = "Shell neu starten"
+es = "Reiniciar shell"
+fr = "Redémarrer l'interpréteur"
+it = "Riavvia shell"
+ja = "シェルを再起動"
+ko = "셸 다시 시작"
+pt-br = "Reiniciar shell"
+ru = "Перезапустить оболочку"
+zh-hans = "重启 Shell"
+zh-hant = "重新啟動 Shell"
+
+# Shown in the panel title bar after the child process finished.
+# {code} is replaced with the exit code.
+[TerminalExited]
+en = "exited with {code}"
+de = "beendet mit {code}"
+es = "finalizado con {code}"
+fr = "terminé avec {code}"
+it = "terminato con {code}"
+ja = "終了コード {code}"
+ko = "종료 코드 {code}"
+pt-br = "encerrado com {code}"
+ru = "завершено с кодом {code}"
+zh-hans = "已结束，退出码 {code}"
+zh-hant = "已結束，結束碼 {code}"
+
+# Title of the dialog shown when an open file was modified by another program
+[FileChangedTitle]
+en = "File Changed"
+de = "Datei geändert"
+es = "Archivo modificado"
+fr = "Fichier modifié"
+it = "File modificato"
+ja = "ファイルが変更されました"
+ko = "파일이 변경됨"
+pt-br = "Arquivo alterado"
+ru = "Файл изменён"
+zh-hans = "文件已更改"
+zh-hant = "檔案已變更"
+
+# {file} is replaced with the file name
+[FileChangedDescription]
+en = "{file} was modified by another program."
+de = "{file} wurde von einem anderen Programm geändert."
+es = "{file} fue modificado por otro programa."
+fr = "{file} a été modifié par un autre programme."
+it = "{file} è stato modificato da un altro programma."
+ja = "{file} は他のプログラムによって変更されました。"
+ko = "{file}이(가) 다른 프로그램에 의해 변경되었습니다."
+pt-br = "{file} foi modificado por outro programa."
+ru = "{file} изменён другой программой."
+zh-hans = "{file} 已被其他程序修改。"
+zh-hant = "{file} 已被其他程式修改。"
+
+# Second line of the file changed dialog
+[FileChangedUnsaved]
+en = "Your unsaved changes will be lost if you reload."
+de = "Ihre ungespeicherten Änderungen gehen beim Neuladen verloren."
+es = "Los cambios no guardados se perderán al recargar."
+fr = "Vos modifications non enregistrées seront perdues si vous rechargez."
+it = "Le modifiche non salvate andranno perse se ricarichi."
+ja = "再読み込みすると未保存の変更は失われます。"
+ko = "다시 불러오면 저장하지 않은 변경 내용이 사라집니다."
+pt-br = "Suas alterações não salvas serão perdidas ao recarregar."
+ru = "Несохранённые изменения будут потеряны при перезагрузке."
+zh-hans = "重新加载将丢失你未保存的修改。"
+zh-hant = "重新載入將遺失你未存檔的修改。"
+
+# Button that discards the editor's copy and loads the file from disk
+[FileChangedReload]
+en = "Reload"
+de = "Neu laden"
+es = "Recargar"
+fr = "Recharger"
+it = "Ricarica"
+ja = "再読み込み"
+ko = "다시 불러오기"
+pt-br = "Recarregar"
+ru = "Перезагрузить"
+zh-hans = "重新加载"
+zh-hant = "重新載入"
+
+# Button that keeps the editor's unsaved changes
+[FileChangedKeepMine]
+en = "Keep Mine"
+de = "Meine behalten"
+es = "Conservar los míos"
+fr = "Garder les miens"
+it = "Mantieni i miei"
+ja = "自分の変更を保持"
+ko = "내 변경 유지"
+pt-br = "Manter os meus"
+ru = "Оставить мои"
+zh-hans = "保留我的"
+zh-hant = "保留我的"
+
+# View menu item that opens the syntax color theme picker
+[ViewTheme]
+en = "Color Theme"
+de = "Farbdesign"
+es = "Tema de color"
+fr = "Thème de couleur"
+it = "Tema colori"
+ja = "配色テーマ"
+ko = "색 테마"
+pt-br = "Tema de cores"
+ru = "Цветовая тема"
+zh-hans = "配色主题"
+zh-hant = "配色主題"
+
+# Menu item that opens another terminal tab
+[TerminalNew]
+en = "New Terminal"
+de = "Neues Terminal"
+es = "Nuevo terminal"
+fr = "Nouveau terminal"
+it = "Nuovo terminale"
+ja = "新しいターミナル"
+ko = "새 터미널"
+pt-br = "Novo terminal"
+ru = "Новый терминал"
+zh-hans = "新建终端"
+zh-hant = "新增終端機"
+
+# Menu item that switches to the next terminal tab
+[TerminalNext]
+en = "Next Terminal"
+de = "Nächstes Terminal"
+es = "Terminal siguiente"
+fr = "Terminal suivant"
+it = "Terminale successivo"
+ja = "次のターミナル"
+ko = "다음 터미널"
+pt-br = "Próximo terminal"
+ru = "Следующий терминал"
+zh-hans = "下一个终端"
+zh-hant = "下一個終端機"
+
+# Menu item that closes the current terminal tab
+[TerminalClose]
+en = "Close Terminal"
+de = "Terminal schließen"
+es = "Cerrar terminal"
+fr = "Fermer le terminal"
+it = "Chiudi terminale"
+ja = "ターミナルを閉じる"
+ko = "터미널 닫기"
+pt-br = "Fechar terminal"
+ru = "Закрыть терминал"
+zh-hans = "关闭终端"
+zh-hant = "關閉終端機"

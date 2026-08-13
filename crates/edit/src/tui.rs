@@ -160,7 +160,38 @@ use crate::hash::*;
 use crate::helpers::*;
 use crate::input::{InputKeyMod, kbmod, vk};
 use crate::oklab::StraightRgba;
+use crate::terminal::screen::{
+    CellAttributes as TerminalCellAttributes, Color as TerminalColor,
+    CursorStyle as TerminalCursorStyle, MouseMode as TerminalMouseMode, Screen as TerminalScreen,
+};
+use crate::terminal::{RcTerminal, TerminalCell, keymap};
 use crate::{input, simd, unicode};
+
+/// Translates a viewport position into terminal cell coordinates.
+fn relative_to(node: &Node, position: Point) -> Point {
+    Point { x: position.x - node.inner.left, y: position.y - node.inner.top }
+}
+
+/// Maps the terminal's rendition flags onto the ones the framebuffer draws.
+///
+/// Reverse and dim have no framebuffer equivalent and are handled by swapping
+/// and blending the colors instead.
+fn to_framebuffer_attr(attr: TerminalCellAttributes) -> Attributes {
+    let mut out = Attributes::None;
+    if attr.has(TerminalCellAttributes::BOLD) {
+        out = out | Attributes::Bold;
+    }
+    if attr.has(TerminalCellAttributes::ITALIC) {
+        out = out | Attributes::Italic;
+    }
+    if attr.has(TerminalCellAttributes::UNDERLINE) {
+        out = out | Attributes::Underlined;
+    }
+    if attr.has(TerminalCellAttributes::STRIKETHROUGH) {
+        out = out | Attributes::Strikethrough;
+    }
+    out
+}
 
 const ROOT_ID: u64 = 0x14057B7EF767814F; // Knuth's MMIX constant
 const SHIFT_TAB: InputKey = vk::TAB.with_modifiers(kbmod::SHIFT);
@@ -177,6 +208,16 @@ type InputMouseState = input::InputMouseState;
 struct CachedTextBuffer {
     node_id: u64,
     editor: RcTextBuffer,
+    seen: bool,
+}
+
+/// Keeps a terminal alive for as long as its node exists.
+///
+/// [`NodeContent`] can't own the [`Rc`] itself, because nodes live in an arena
+/// and are never dropped. This is the same trick [`CachedTextBuffer`] plays.
+struct CachedTerminal {
+    node_id: u64,
+    terminal: RcTerminal,
     seen: bool,
 }
 
@@ -369,6 +410,7 @@ pub struct Tui {
 
     /// A list of cached text buffers used for [`Context::editline()`].
     cached_text_buffers: Vec<CachedTextBuffer>,
+    cached_terminals: Vec<CachedTerminal>,
 
     /// The clipboard contents.
     clipboard: Clipboard,
@@ -422,6 +464,7 @@ impl Tui {
             menubar_toggle_id: 0,
 
             cached_text_buffers: Vec::with_capacity(16),
+            cached_terminals: Vec::new(),
 
             clipboard: Default::default(),
 
@@ -784,6 +827,7 @@ impl Tui {
 
         // Remove cached text editors that are no longer in use.
         self.cached_text_buffers.retain(|c| c.seen);
+        self.cached_terminals.retain(|c| c.seen);
 
         for root in Tree::iterate_siblings(Some(self.prev_tree.root_first)) {
             let mut root = root.borrow_mut();
@@ -871,6 +915,99 @@ impl Tui {
             self.render_node(&mut child);
         }
         self.framebuffer.render(arena)
+    }
+
+    /// Paints a terminal's grid into the framebuffer.
+    ///
+    /// Text goes in one line at a time, then colors and attributes are applied
+    /// as runs of equal styling, because that's what the framebuffer's diffing
+    /// is cheapest at.
+    fn render_terminal(&mut self, screen: &TerminalScreen, target: Rect, has_focus: bool) {
+        let scratch = scratch_arena(None);
+
+        // The palette the editor detected from its own terminal, so that the
+        // panel's colors match everything else on screen.
+        let mut palette = [0u32; 16];
+        for (i, slot) in palette.iter_mut().enumerate() {
+            *slot = self.framebuffer.indexed(IndexedColor::from(i as u8)).to_rgba() >> 8;
+        }
+        let default_fg = self.framebuffer.indexed(IndexedColor::Foreground);
+        let default_bg = self.framebuffer.indexed(IndexedColor::Background);
+
+        let resolve = |color: TerminalColor, default: StraightRgba| -> StraightRgba {
+            match color.to_rgb(&palette) {
+                Some(rgb) => StraightRgba::from_rgba(rgb << 8 | 0xff),
+                None => default,
+            }
+        };
+
+        let rows = (target.bottom - target.top).min(screen.size().height);
+        let cols = (target.right - target.left).min(screen.size().width);
+
+        for y in 0..rows {
+            let row = screen.visible_row(y);
+            let row = &row[..(cols as usize).min(row.len())];
+            let line_y = target.top + y;
+
+            // The trailing cell of a wide character carries no text of its own.
+            let mut line = BString::empty();
+            for cell in row {
+                if !cell.attr.has(TerminalCellAttributes::WIDE_TRAILER) {
+                    line.push(&*scratch, cell.ch);
+                }
+            }
+            self.framebuffer.replace_text(line_y, target.left, target.right, &line);
+
+            // Collect runs of identical styling and paint them in one go.
+            let mut run_start = 0usize;
+            while run_start < row.len() {
+                let style = (row[run_start].fg, row[run_start].bg, row[run_start].attr);
+                let mut run_end = run_start + 1;
+                while run_end < row.len()
+                    && (row[run_end].fg, row[run_end].bg, row[run_end].attr) == style
+                {
+                    run_end += 1;
+                }
+
+                let (fg, bg, attr) = style;
+                let mut fg = resolve(fg, default_fg);
+                let mut bg = resolve(bg, default_bg);
+
+                if attr.has(TerminalCellAttributes::REVERSE) {
+                    mem::swap(&mut fg, &mut bg);
+                }
+                if attr.has(TerminalCellAttributes::DIM) {
+                    // No dedicated dim attribute in the framebuffer, so meet
+                    // the background halfway instead.
+                    let half_bg = StraightRgba::from_rgba((bg.to_rgba() & !0xff) | 0x80);
+                    fg = fg.oklab_blend(half_bg);
+                }
+
+                let rect = Rect {
+                    left: target.left + run_start as CoordType,
+                    top: line_y,
+                    right: target.left + run_end as CoordType,
+                    bottom: line_y + 1,
+                };
+
+                self.framebuffer.blend_bg(rect, bg);
+                self.framebuffer.blend_fg(rect, fg);
+                self.framebuffer.replace_attr(rect, Attributes::All, to_framebuffer_attr(attr));
+
+                run_start = run_end;
+            }
+        }
+
+        // The cursor is global, so only claim it while the panel is focused.
+        if has_focus && screen.cursor_visible && screen.view_offset() == 0 {
+            let cursor = screen.cursor();
+            if cursor.x < cols && cursor.y < rows {
+                self.framebuffer.set_cursor(
+                    Point { x: target.left + cursor.x, y: target.top + cursor.y },
+                    screen.cursor_style == TerminalCursorStyle::Block,
+                );
+            }
+        }
     }
 
     /// Recursively renders each node and its children.
@@ -1038,6 +1175,10 @@ impl Tui {
                         tb.visual_line_count() + inner.height() - 1,
                     );
                 }
+            }
+            NodeContent::Terminal(tc) => {
+                let term = tc.terminal.borrow();
+                self.render_terminal(term.screen(), inner_clipped, tc.has_focus);
             }
             NodeContent::Scrollarea(sc) => {
                 let content = node.children.first.unwrap().borrow();
@@ -2117,6 +2258,160 @@ impl<'a> Context<'a, '_> {
     /// Creates a text area.
     pub fn textarea(&mut self, classname: &'static str, tb: RcTextBuffer) {
         self.textarea_internal(classname, TextBufferPayload::Textarea(tb));
+    }
+
+    /// Embeds a terminal.
+    ///
+    /// The caller owns the [`Terminal`] and is responsible for spawning it;
+    /// this only draws it, sizes it, and forwards input to it while focused.
+    /// Returns true if the terminal's screen changed and needs a redraw.
+    pub fn terminal(&mut self, classname: &'static str, term: RcTerminal) -> bool {
+        self.block_begin(classname);
+        self.block_end();
+
+        let mut node = self.tree.last_node.borrow_mut();
+        let node = &mut *node;
+
+        let terminal = {
+            let cache = &mut self.tui.cached_terminals;
+            let cached = match cache.iter_mut().find(|t| t.node_id == node.id) {
+                Some(cached) => {
+                    cached.terminal = term.clone();
+                    cached.seen = true;
+                    cached
+                }
+                None => {
+                    cache.push(CachedTerminal {
+                        node_id: node.id,
+                        terminal: term.clone(),
+                        seen: true,
+                    });
+                    cache.last_mut().unwrap()
+                }
+            };
+
+            // SAFETY: Same reasoning as in `textarea_internal`: the cache owns
+            // an `Rc` that outlives the node this reference is stored in.
+            unsafe { mem::transmute::<&TerminalCell, &TerminalCell>(&cached.terminal) }
+        };
+
+        let has_focus = self.tui.is_node_focused(node.id);
+        node.content = NodeContent::Terminal(TerminalContent { terminal, has_focus });
+        node.attributes.focusable = true;
+
+        // Drain whatever the child produced since the last frame.
+        let mut dirty = term.borrow_mut().poll();
+
+        // The size is only known once the node has been laid out, which first
+        // happens a frame later. Until then the terminal keeps its spawn size.
+        if let Some(node_prev) = self.tui.prev_node_map.get(node.id) {
+            let inner = node_prev.borrow().inner;
+            let size = Size { width: inner.width(), height: inner.height() };
+            if size.width > 0 && size.height > 0 {
+                let mut term = term.borrow_mut();
+                if size != term.screen().size() {
+                    term.resize(size);
+                    dirty = true;
+                }
+            }
+
+            if has_focus {
+                dirty |= self.terminal_handle_input(&term, &node_prev.borrow());
+            }
+        }
+
+        dirty
+    }
+
+    /// Forwards input to the child while the terminal has focus.
+    fn terminal_handle_input(&mut self, term: &RcTerminal, node_prev: &Node) -> bool {
+        let mut term = term.borrow_mut();
+        let mut dirty = false;
+
+        // The wheel scrolls our own scrollback unless the child asked for mouse
+        // reporting, and it works whether or not the panel has focus.
+        let scroll = self.input_scroll_delta;
+        if scroll.y != 0 && node_prev.inner_clipped.contains(self.tui.mouse_position) {
+            if term.screen().mouse_mode == TerminalMouseMode::Off {
+                term.screen_mut().scroll_view(-scroll.y);
+                self.input_scroll_delta = Point::default();
+                return true;
+            }
+
+            let event = keymap::MouseEvent {
+                state: InputMouseState::Scroll,
+                modifiers: self.input_mouse_modifiers,
+                position: relative_to(node_prev, self.tui.mouse_position),
+                scroll,
+                drag: false,
+            };
+            if let Some(bytes) = keymap::encode_mouse(&event, term.screen()) {
+                term.write(&bytes);
+                self.input_scroll_delta = Point::default();
+            }
+        }
+
+        if self.input_consumed {
+            return dirty;
+        }
+
+        // Buttons are only reported on a change, because the tui keeps the
+        // pressed state across frames and the child wants events, not state.
+        let state = self.tui.mouse_state;
+        let position = self.tui.mouse_position;
+        if term.screen().mouse_mode != TerminalMouseMode::Off
+            && term.take_mouse_change(state, position)
+            && node_prev.inner_clipped.contains(position)
+        {
+            let event = keymap::MouseEvent {
+                state,
+                modifiers: self.input_mouse_modifiers,
+                position: relative_to(node_prev, position),
+                scroll: Point::default(),
+                drag: state != InputMouseState::None && state != InputMouseState::Release,
+            };
+            if let Some(bytes) = keymap::encode_mouse(&event, term.screen()) {
+                term.write(&bytes);
+            }
+        }
+
+        // Once the child is gone there's nobody to type at. Swallowing keys
+        // here would also hide them from the panel, which wants to offer
+        // "press Enter to close". Scrolling the scrollback still works.
+        if !term.is_running() {
+            return dirty;
+        }
+
+        let mut consumed = false;
+
+        if let Some(key) = self.input_keyboard {
+            // Paste arrives as a synthesized Ctrl+V after the parser put the
+            // text on the clipboard. Sending a literal 0x16 instead would be
+            // useless in a terminal panel.
+            if key == kbmod::CTRL | vk::V {
+                let data = self.tui.clipboard.read().to_vec();
+                let bytes = keymap::encode_paste(&data, term.screen());
+                term.write(&bytes);
+                consumed = true;
+            } else if let Some(bytes) = keymap::encode_key(key, term.screen()) {
+                term.write(&bytes);
+                consumed = true;
+            }
+            // Anything else falls through to the editor, which is how the
+            // panel's own shortcuts keep working while the child has focus.
+        }
+
+        if !consumed && let Some(text) = self.input_text {
+            term.write(text.as_bytes());
+            consumed = true;
+        }
+
+        if consumed {
+            dirty = true;
+            self.set_input_consumed();
+        }
+
+        dirty
     }
 
     fn textarea_internal(&mut self, classname: &'static str, payload: TextBufferPayload) -> bool {
@@ -3788,6 +4083,12 @@ struct ScrollareaContent {
 }
 
 /// NOTE: Must not contain items that require drop().
+struct TerminalContent<'a> {
+    terminal: &'a TerminalCell,
+    has_focus: bool,
+}
+
+/// NOTE: Must not contain items that require drop().
 #[derive(Default)]
 enum NodeContent<'a> {
     #[default]
@@ -3797,6 +4098,7 @@ enum NodeContent<'a> {
     Table(TableContent<'a>),
     Text(TextContent<'a>),
     Textarea(TextareaContent<'a>),
+    Terminal(TerminalContent<'a>),
     Scrollarea(ScrollareaContent),
 }
 

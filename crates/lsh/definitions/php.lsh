@@ -1,0 +1,153 @@
+#[display_name = "PHP"]
+#[path = "**/*.php"]
+#[path = "**/*.phtml"]
+pub fn php() {
+    until /$/ {
+        yield other;
+
+        // A .php file is HTML until an open tag says otherwise, so the markup
+        // around the code gets highlighted too rather than sitting there plain.
+        if /<\?(?:php\>|=)?/ {
+            yield keyword.other;
+            php_code();
+        } else if /<!--/ {
+            loop {
+                yield comment;
+                await input;
+                if /-->/ {
+                    yield comment;
+                    break;
+                }
+            }
+        } else if /<!(?i:DOCTYPE)[^>]*>/ {
+            yield constant.language;
+        } else if /<\/?([\w:.-]+)/ {
+            yield $1 as constant.language;
+            yield other;
+            php_tag_attributes();
+        } else if /(?:&#|&)[\w:.-]+;/ {
+            yield constant.numeric;
+        }
+
+        yield other;
+    }
+}
+
+/// Everything between `<?php` and `?>`.
+fn php_code() {
+    loop {
+        yield other;
+
+        if /\?>/ {
+            break;
+        }
+
+        if /\/\*/ {
+            // See the note in css.lsh: the loop body has to consume something
+            // itself rather than relying on the built-in advance step, which
+            // uses an offset from before the last `await input`.
+            loop {
+                yield comment;
+                if /\*\// {
+                    yield comment;
+                    break;
+                }
+                if /[^*]+/ {
+                } else if /\*/ {
+                }
+                await input;
+            }
+        } else if /(?:\/\/|#).*/ {
+            yield comment;
+        } else if /'/ {
+            // Single quoted strings don't interpolate, but they do still
+            // honour \' and \\.
+            until /$/ {
+                yield string;
+                if /\\./ {
+                } else if /'/ {
+                    yield string;
+                    break;
+                }
+                await input;
+            }
+        } else if /"/ {
+            until /$/ {
+                yield string;
+                if /\\./ {
+                } else if /"/ {
+                    yield string;
+                    break;
+                }
+                await input;
+            }
+        } else if /\$\$?[A-Za-z_]\w*/ {
+            yield variable;
+        } else if /(?:break|case|catch|continue|declare|default|do|else|elseif|endfor|endforeach|endif|endswitch|endwhile|finally|for|foreach|goto|if|match|return|switch|throw|try|while)\>/ {
+            yield keyword.control;
+        } else if /(?:abstract|and|array|as|callable|class|clone|const|enum|extends|final|fn|function|global|implements|include_once|include|instanceof|insteadof|interface|list|namespace|new|or|print|private|protected|public|readonly|require_once|require|static|trait|unset|use|var|xor|yield)\>/ {
+            yield keyword.other;
+        } else if /(?i:true|false|null)\>/ {
+            yield constant.language;
+        } else if /(?i:__(?:class|dir|file|function|line|method|namespace)__)\>/ {
+            yield constant.language;
+        } else if /(?i:-?(?:0x[\da-f_]+|0b[01_]+|0o[0-7_]+|[\d_]+\.?[\d_]*|\.[\d_]+)(?:e[+-]?[\d_]+)?)/ {
+            if /\w+/ {
+                // Not actually a number, e.g. `123abc`.
+            } else {
+                yield constant.numeric;
+            }
+        } else if /(\w+)\s*\(/ {
+            yield $1 as method;
+        } else if /\\?[A-Za-z_]\w*\\[\w\\]*/ {
+            // Namespaced names such as `App\Models\User`. Written as a plain
+            // charset repetition because the regex compiler doesn't support
+            // unbounded repetition of a group.
+            yield storage.type;
+        } else if /\w+/ {
+            // Align the next iteration on a word boundary.
+        } else if /[^\s?]+/ {
+            // Punctuation. Consuming it explicitly keeps the loop moving
+            // without the built-in advance step, and stopping before `?`
+            // leaves the closing `?>` for the check at the top.
+        } else if /\s+/ {
+        }
+
+        await input;
+    }
+
+    yield keyword.other;
+    yield other;
+}
+
+/// Attributes of an HTML tag, which may themselves contain `<?php ... ?>`.
+fn php_tag_attributes() {
+    until />/ {
+        yield other;
+        await input;
+
+        if /<\?(?:php\>|=)?/ {
+            yield keyword.other;
+            php_code();
+        } else if /([\w:.@-]+)\s*=/ {
+            yield $1 as variable;
+            yield other;
+        } else if /"/ {
+            until /"/ {
+                yield string;
+                await input;
+            }
+            yield string;
+        } else if /'/ {
+            until /'/ {
+                yield string;
+                await input;
+            }
+            yield string;
+        } else if /[^\s"'=<>`]+/ {
+            yield string;
+        }
+    }
+
+    yield other;
+}

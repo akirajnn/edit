@@ -4,6 +4,7 @@
 use std::ffi::OsStr;
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use std::{fs, io};
 
 use edit::buffer::{RcTextBuffer, TextBuffer};
@@ -15,12 +16,36 @@ use crate::apperr;
 use crate::settings::Settings;
 use crate::state::DisplayablePathBuf;
 
+/// What a file looked like on disk the last time we touched it.
+///
+/// [`sys::FileId`] answers "is this the same file", which is a different
+/// question from "did the file change"; this answers the latter.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct DiskStamp {
+    modified: SystemTime,
+    len: u64,
+}
+
+impl DiskStamp {
+    /// Returns `None` if the file is gone or can't be inspected.
+    ///
+    /// A missing modification time (some filesystems don't have one) also
+    /// yields `None`, which makes us fall back to never reporting a change
+    /// rather than reporting one on every poll.
+    pub fn of(path: &Path) -> Option<Self> {
+        let meta = fs::metadata(path).ok()?;
+        Some(Self { modified: meta.modified().ok()?, len: meta.len() })
+    }
+}
+
 pub struct Document {
     pub buffer: RcTextBuffer,
     pub path: Option<PathBuf>,
     pub dir: Option<DisplayablePathBuf>,
     pub filename: String,
     pub file_id: Option<sys::FileId>,
+    /// Tracks external modifications. See [`crate::watcher`].
+    pub disk_stamp: Option<DiskStamp>,
     pub new_file_counter: usize,
     pub language_override: Option<Option<&'static Language>>,
 }
@@ -38,6 +63,8 @@ impl Document {
         if let Ok(id) = sys::file_id(None, path) {
             self.file_id = Some(id);
         }
+        // Our own write must not read back as an external change.
+        self.disk_stamp = DiskStamp::of(path);
 
         if let Some(path) = new_path {
             self.set_path(path);
@@ -58,8 +85,46 @@ impl Document {
         if let Ok(id) = sys::file_id(None, path) {
             self.file_id = Some(id);
         }
+        self.disk_stamp = DiskStamp::of(path);
 
         Ok(())
+    }
+
+    /// Accepts the file as it is on disk right now without reloading,
+    /// so that the same external change isn't reported twice.
+    pub fn accept_disk_state(&mut self) {
+        if let Some(path) = &self.path {
+            self.disk_stamp = DiskStamp::of(path);
+        }
+    }
+
+    /// Reloads from disk, keeping the cursor where it was.
+    ///
+    /// The line the user was looking at is far more useful to preserve than
+    /// the byte offset, which an external edit will have shifted anyway.
+    pub fn reload_preserving_cursor(&mut self) -> apperr::Result<()> {
+        let pos = self.buffer.borrow().cursor_logical_pos();
+
+        self.reread(None)?;
+
+        let mut tb = self.buffer.borrow_mut();
+        tb.cursor_move_to_logical(pos);
+        tb.mark_as_clean();
+        Ok(())
+    }
+
+    /// Returns true if the file changed behind our back.
+    pub fn changed_on_disk(&self) -> bool {
+        let Some(path) = &self.path else {
+            return false;
+        };
+        match DiskStamp::of(path) {
+            // A file that vanished isn't a change we can usefully act on:
+            // there's nothing to reload, and nagging about it would be worse
+            // than letting the user save it back into place.
+            None => false,
+            current => current != self.disk_stamp,
+        }
     }
 
     fn set_path(&mut self, path: PathBuf) {
@@ -142,6 +207,17 @@ impl DocumentManager {
         self.list.last_mut()
     }
 
+    #[inline]
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Document> {
+        self.list.iter_mut()
+    }
+
+    /// The files worth watching for external modifications.
+    #[inline]
+    pub fn paths(&self) -> impl Iterator<Item = &Path> + Clone {
+        self.list.iter().filter_map(|doc| doc.path.as_deref())
+    }
+
     pub fn update_active<F: FnMut(&Document) -> bool>(&mut self, mut func: F) -> bool {
         let Some(idx) = self.list.iter().rposition(&mut func) else {
             return false;
@@ -186,6 +262,7 @@ impl DocumentManager {
             dir: Default::default(),
             filename: Default::default(),
             file_id: None,
+            disk_stamp: None,
             new_file_counter: 0,
             language_override: None,
         };
@@ -238,6 +315,7 @@ impl DocumentManager {
             dir: None,
             filename: Default::default(),
             file_id,
+            disk_stamp: DiskStamp::of(&path),
             new_file_counter: 0,
             language_override: None,
         };

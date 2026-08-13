@@ -25,6 +25,8 @@ pub mod oklab;
 pub mod path;
 pub mod simd;
 pub mod sys;
+pub mod terminal;
+pub mod theme;
 pub mod tui;
 pub mod unicode;
 pub mod vt;

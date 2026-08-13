@@ -207,9 +207,30 @@ impl TryFrom<u32> for HighlightKind {{
             );
         }
 
-        output.push_str("/*\n");
-        output.push_str(&self.compiler.as_mermaid());
-        output.push_str("*/\n");
+        // The identifiers are what a user writes in a theme definition, so they
+        // have to exist at runtime and not just as comments on the enum.
+        _ = writeln!(
+            output,
+            "\npub const HIGHLIGHT_KIND_COUNT: usize = {};",
+            assembly.highlight_kinds.len()
+        );
+        output.push_str(
+            "#[rustfmt::skip] pub static HIGHLIGHT_KIND_NAMES: [&str; HIGHLIGHT_KIND_COUNT] = [\n",
+        );
+        for hk in &assembly.highlight_kinds {
+            _ = writeln!(output, "    \"{}\",", hk.identifier);
+        }
+        output.push_str("];\n");
+
+        // Line comments, not a `/* */` block: the graph labels contain regex
+        // sources, and any definition matching a block comment puts a literal
+        // `/*` or `*/` in there. Inside a block comment those nest (or worse,
+        // close it early) and the generated file stops being valid Rust.
+        for line in self.compiler.as_mermaid().lines() {
+            output.push_str("// ");
+            output.push_str(line);
+            output.push('\n');
+        }
 
         output.push_str("\n#[rustfmt::skip] pub static LANGUAGES: &[Language] = &[\n");
         for ep in &assembly.entrypoints {

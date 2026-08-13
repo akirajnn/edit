@@ -27,6 +27,17 @@ fn ambiguous_width() -> usize {
     unsafe { AMBIGUOUS_WIDTH }
 }
 
+/// Returns how many columns a single character occupies.
+///
+/// This is 0 for combining marks, 2 for wide characters, and 1 otherwise.
+/// Unlike [`MeasurementConfig`], this doesn't do any grapheme cluster
+/// segmentation, which is fine for a terminal grid: a pseudo console hands us
+/// one character at a time and each one lands in its own cell.
+pub fn char_width(c: char) -> CoordType {
+    let props = ucd_grapheme_cluster_lookup(c);
+    ucd_grapheme_cluster_character_width(props, ambiguous_width()) as CoordType
+}
+
 /// Stores a position inside a [`ReadableDocument`].
 ///
 /// The cursor tracks both the absolute byte-offset,

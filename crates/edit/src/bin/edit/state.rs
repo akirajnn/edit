@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use edit::framebuffer::IndexedColor;
 use edit::helpers::*;
 use edit::oklab::StraightRgba;
+use edit::terminal::RcTerminal;
+use edit::theme::Theme;
 use edit::tui::*;
 use edit::{buffer, icu};
 
@@ -157,6 +159,12 @@ pub struct State {
 
     pub wants_language_picker: bool,
 
+    pub wants_theme_picker: bool,
+    /// The name shown as selected in the picker.
+    pub theme_name: String,
+    /// What to go back to if the picker is dismissed after previewing.
+    pub theme_before_preview: Option<Theme>,
+
     pub wants_encoding_picker: bool,
     pub wants_encoding_change: StateEncodingChange,
     pub encoding_picker_needle: String,
@@ -173,11 +181,34 @@ pub struct State {
     pub goto_target: String,
     pub goto_invalid: bool,
 
+    /// Set when a file with unsaved changes was also modified on disk.
+    /// Holds the document's filename, purely so the dialog can name it.
+    pub wants_reload_prompt: Option<String>,
+
+    /// The terminals in the panel, one per tab. The first is spawned the first
+    /// time the panel is opened; the rest on request.
+    pub terminals: Vec<RcTerminal>,
+    /// Index into [`State::terminals`] of the tab currently on screen.
+    pub terminal_active: usize,
+    /// Set to open another tab on the next frame.
+    pub terminal_wants_new: bool,
+    pub terminal_visible: bool,
+    pub terminal_height: CoordType,
+    /// Set to move the input focus into or out of the panel on the next frame.
+    pub terminal_wants_focus: Option<bool>,
+    /// Whether the panel held the focus as of the last frame.
+    pub terminal_focused: bool,
+
     pub osc_title_file_status: OscTitleFileStatus,
     pub osc_clipboard_sync: bool,
     pub osc_clipboard_always_send: bool,
     pub exit: bool,
 }
+
+/// How tall the panel is when it's first opened.
+pub const TERMINAL_DEFAULT_HEIGHT: CoordType = 12;
+/// Below this the panel is too cramped to be useful.
+pub const TERMINAL_MIN_HEIGHT: CoordType = 3;
 
 impl State {
     pub fn new() -> apperr::Result<Self> {
@@ -207,6 +238,10 @@ impl State {
 
             wants_language_picker: false,
 
+            wants_theme_picker: false,
+            theme_name: String::new(),
+            theme_before_preview: None,
+
             wants_encoding_picker: false,
             encoding_picker_needle: Default::default(),
             encoding_picker_results: Default::default(),
@@ -222,6 +257,16 @@ impl State {
             wants_goto: false,
             goto_target: Default::default(),
             goto_invalid: false,
+
+            wants_reload_prompt: None,
+
+            terminals: Vec::new(),
+            terminal_active: 0,
+            terminal_wants_new: false,
+            terminal_visible: false,
+            terminal_height: TERMINAL_DEFAULT_HEIGHT,
+            terminal_wants_focus: None,
+            terminal_focused: false,
 
             osc_title_file_status: Default::default(),
             osc_clipboard_sync: false,

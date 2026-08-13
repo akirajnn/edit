@@ -22,7 +22,7 @@ pub fn draw_editor(ctx: &mut Context, state: &mut State) {
         StateSearchKind::Search => 4,
         StateSearchKind::Replace => 5,
         _ => 2,
-    };
+    } + crate::draw_terminal::terminal_panel_height(state);
 
     if let Some(doc) = state.documents.active() {
         ctx.textarea("textarea", doc.buffer.clone());

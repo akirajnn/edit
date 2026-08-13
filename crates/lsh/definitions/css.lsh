@@ -1,0 +1,128 @@
+#[display_name = "CSS"]
+#[path = "**/*.css"]
+pub fn css() {
+    until /$/ {
+        yield other;
+
+        if /\/\*/ {
+            // NOTE: The body consumes explicitly instead of leaning on the
+            // loop's built-in "advance if nothing matched" step. That step
+            // compares against an offset saved before `await input`, which is
+            // stale once we're on a new line, and skips a character whenever
+            // the closing `*/` happens to land on that same column.
+            loop {
+                yield comment;
+                if /\*\// {
+                    yield comment;
+                    break;
+                }
+                if /[^*]+/ {
+                } else if /\*/ {
+                }
+                await input;
+            }
+        } else if /@[\w-]+/ {
+            // At-rules: @media, @import, @keyframes, ...
+            yield keyword.control;
+        } else if /"/ {
+            double_quoted();
+        } else if /'/ {
+            single_quoted();
+        } else if /\{/ {
+            yield other;
+            declarations();
+        } else if /[.#:]{1,2}[\w-]+/ {
+            // Class, id and pseudo selectors.
+            yield method;
+        } else if /\w[\w-]*/ {
+            // Element selectors. Also gobbles words so that the next iteration
+            // starts on a boundary rather than mid-identifier.
+            yield method;
+        }
+
+        yield other;
+    }
+}
+
+/// The body of a rule, where the language switches from selectors to
+/// property/value pairs.
+fn declarations() {
+    loop {
+        yield other;
+
+        if /\}/ {
+            break;
+        }
+
+        if /\/\*/ {
+            block_comment();
+        } else if /([\w-]+)\s*:/ {
+            yield $1 as variable;
+            yield other;
+        } else if /"/ {
+            double_quoted();
+        } else if /'/ {
+            single_quoted();
+        } else if /!\s*(?i:important)\>/ {
+            yield keyword.other;
+        } else if /#[\da-fA-F]{3,8}\>/ {
+            // Hex colors. Inside a block a `#` can't start an id selector,
+            // so there's nothing to disambiguate against here.
+            yield constant.numeric;
+        } else if /-?(?:\d+\.?\d*|\.\d+)(?:%|(?i:e[mx]|ch|rem|vw|vh|vmin|vmax|cm|mm|in|pt|pc|px|deg|rad|turn|s|ms|fr)\>)?/ {
+            yield constant.numeric;
+        } else if /(\w[\w-]*)\s*\(/ {
+            yield $1 as method;
+        } else if /\$?[\w-]+/ {
+            // Keyword values such as `block`, `none` or `inherit`.
+            yield constant.language;
+        } else if /\s+/ {
+        } else if /[^}]/ {
+            // Punctuation, one character at a time, so the loop always makes
+            // progress. Stops before `}` so the check above sees it.
+        }
+
+        yield other;
+        await input;
+    }
+
+    yield other;
+}
+
+fn block_comment() {
+    loop {
+        yield comment;
+        if /\*\// {
+            yield comment;
+            break;
+        }
+        if /[^*]+/ {
+        } else if /\*/ {
+        }
+        await input;
+    }
+}
+
+fn double_quoted() {
+    until /$/ {
+        yield string;
+        if /\\./ {
+        } else if /"/ {
+            yield string;
+            break;
+        }
+        await input;
+    }
+}
+
+fn single_quoted() {
+    until /$/ {
+        yield string;
+        if /\\./ {
+        } else if /'/ {
+            yield string;
+            break;
+        }
+        await input;
+    }
+}

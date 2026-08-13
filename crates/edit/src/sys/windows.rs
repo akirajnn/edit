@@ -73,6 +73,8 @@ struct State {
     read_console_input_ex: ReadConsoleInputExW,
     stdin: Foundation::HANDLE,
     stdout: Foundation::HANDLE,
+    /// Manual reset event that lets other threads interrupt [`read_stdin`].
+    wake: Foundation::HANDLE,
     stdin_cp_old: u32,
     stdout_cp_old: u32,
     stdin_mode_old: u32,
@@ -86,6 +88,7 @@ static mut STATE: State = State {
     read_console_input_ex: read_console_input_ex_placeholder,
     stdin: null_mut(),
     stdout: null_mut(),
+    wake: null_mut(),
     stdin_cp_old: 0,
     stdout_cp_old: 0,
     stdin_mode_old: INVALID_CONSOLE_MODE,
@@ -111,7 +114,23 @@ pub fn init() -> Deinit {
         STATE.stdin = Console::GetStdHandle(Console::STD_INPUT_HANDLE);
         STATE.stdout = Console::GetStdHandle(Console::STD_OUTPUT_HANDLE);
 
+        // Manual reset, initially unsignaled. If this fails we simply keep a
+        // null handle around and `read_stdin` waits on stdin alone, exactly
+        // like it did before. Only the terminal panel needs this.
+        STATE.wake = Threading::CreateEventW(null(), 1, 0, null());
+
         Deinit
+    }
+}
+
+/// Interrupts a blocking [`read_stdin`] so that the caller redraws.
+///
+/// This is the one function here that is safe to call from another thread.
+pub fn wake() {
+    unsafe {
+        if !STATE.wake.is_null() {
+            Threading::SetEvent(STATE.wake);
+        }
     }
 }
 
@@ -294,13 +313,33 @@ pub fn read_stdin(arena: &Arena, mut timeout: time::Duration) -> Option<BString<
 
     // Read until there's either a timeout or we have something to process.
     loop {
-        if timeout != time::Duration::MAX {
+        // We must wait even without a timeout, because the wake event is the
+        // only way a background thread can interrupt an otherwise blocking read.
+        if timeout != time::Duration::MAX || unsafe { !STATE.wake.is_null() } {
             let beg = time::Instant::now();
 
-            match unsafe { Threading::WaitForSingleObject(STATE.stdin, timeout.as_millis() as u32) }
-            {
+            let (handles, count) = unsafe {
+                let handles = [STATE.stdin, STATE.wake];
+                let count = if STATE.wake.is_null() { 1 } else { 2 };
+                (handles, count)
+            };
+            let ms = if timeout == time::Duration::MAX {
+                Threading::INFINITE
+            } else {
+                timeout.as_millis() as u32
+            };
+
+            const WAIT_WAKE: u32 = Foundation::WAIT_OBJECT_0 + 1;
+
+            match unsafe { Threading::WaitForMultipleObjects(count, handles.as_ptr(), 0, ms) } {
                 // Ready to read? Continue with reading below.
                 Foundation::WAIT_OBJECT_0 => {}
+                // Someone woke us up. Treat it just like a timeout: the caller
+                // gets an empty read and redraws with whatever changed.
+                WAIT_WAKE => {
+                    unsafe { Threading::ResetEvent(STATE.wake) };
+                    break;
+                }
                 // Timeout? Skip reading entirely.
                 Foundation::WAIT_TIMEOUT => break,
                 // Error? Tell the caller stdin is broken.
@@ -622,14 +661,64 @@ pub fn preferred_languages<'a>(arena: &'a Arena) -> BVec<'a, &'a str> {
 
 #[inline]
 #[cold]
-fn last_os_error() -> io::Error {
+pub(super) fn last_os_error() -> io::Error {
     io::Error::last_os_error()
 }
 
-fn check_bool_return(ret: BOOL) -> io::Result<()> {
+pub(super) fn check_bool_return(ret: BOOL) -> io::Result<()> {
     if ret == 0 { Err(last_os_error()) } else { Ok(()) }
 }
 
 fn check_ptr_return<T>(ret: *mut T) -> io::Result<NonNull<T>> {
     NonNull::new(ret).ok_or_else(last_os_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::thread;
+
+    use super::*;
+
+    /// The terminal panel is useless if a background thread can't interrupt an
+    /// otherwise indefinitely blocking read.
+    ///
+    /// `STATE.stdin` is pointed at an event that never signals, so that this
+    /// exercises the wait/reset logic without a real console racing us into the
+    /// read path (and without disturbing the console modes of whoever runs the
+    /// tests). The read path itself is covered by using the editor.
+    #[test]
+    fn wake_interrupts_a_blocking_read() {
+        let _deinit = init();
+
+        unsafe {
+            STATE.stdin = Threading::CreateEventW(null(), 1, 0, null());
+            assert!(!STATE.stdin.is_null());
+        }
+
+        thread::spawn(|| {
+            thread::sleep(time::Duration::from_millis(200));
+            wake();
+        });
+
+        let arena = Arena::new(4 * MEBI).unwrap();
+        let beg = time::Instant::now();
+        let input = read_stdin(&arena, time::Duration::MAX);
+        let elapsed = beg.elapsed();
+
+        // An empty read is how a timeout/wake is reported to the caller.
+        assert_eq!(input.as_deref(), Some(""));
+        assert!(elapsed < time::Duration::from_secs(10), "read blocked for {elapsed:?}");
+
+        // The event must be reset, or every later read would return instantly
+        // and the editor would spin at 100% CPU.
+        let beg = time::Instant::now();
+        let input = read_stdin(&arena, time::Duration::from_millis(300));
+        assert_eq!(input.as_deref(), Some(""));
+        assert!(
+            beg.elapsed() >= time::Duration::from_millis(250),
+            "the wake event stayed signaled"
+        );
+
+        unsafe { Foundation::CloseHandle(STATE.stdin) };
+    }
 }

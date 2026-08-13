@@ -45,6 +45,7 @@ use crate::framebuffer::{Attributes, Framebuffer, IndexedColor};
 use crate::helpers::*;
 use crate::lsh::cache::HighlighterCache;
 use crate::lsh::{HighlightKind, Highlighter, Language};
+use crate::theme;
 use crate::oklab::StraightRgba;
 use crate::simd::memchr2;
 use crate::unicode::{self, Cursor, MeasurementConfig};
@@ -2138,30 +2139,9 @@ impl TextBuffer {
                 let end = self.cursor_move_to_offset_internal(beg, next.start);
                 cursor = end;
 
-                let color = match curr.kind {
-                    HighlightKind::Other => None,
-                    HighlightKind::Comment => Some(IndexedColor::Green),
-                    HighlightKind::Method => Some(IndexedColor::BrightYellow),
-                    HighlightKind::String => Some(IndexedColor::BrightRed),
-                    HighlightKind::Variable => Some(IndexedColor::BrightCyan),
-                    HighlightKind::ConstantLanguage => Some(IndexedColor::BrightBlue),
-                    HighlightKind::ConstantNumeric => Some(IndexedColor::BrightGreen),
-                    HighlightKind::KeywordControl => Some(IndexedColor::BrightMagenta),
-                    HighlightKind::KeywordOther => Some(IndexedColor::BrightBlue),
-                    HighlightKind::KeywordPreprocessor => Some(IndexedColor::BrightBlue),
-                    HighlightKind::MarkupBold => None,
-                    HighlightKind::MarkupChanged => Some(IndexedColor::BrightBlue),
-                    HighlightKind::MarkupDeleted => Some(IndexedColor::BrightRed),
-                    HighlightKind::MarkupHeading => Some(IndexedColor::BrightBlue),
-                    HighlightKind::MarkupInserted => Some(IndexedColor::BrightGreen),
-                    HighlightKind::MarkupItalic => None,
-                    HighlightKind::MarkupLink => None,
-                    HighlightKind::MarkupList => Some(IndexedColor::BrightBlue),
-                    HighlightKind::MarkupStrikethrough => None,
-                    HighlightKind::MetaHeader => Some(IndexedColor::BrightBlue),
-                    HighlightKind::StorageAnnotation => Some(IndexedColor::Cyan),
-                    HighlightKind::StorageType => Some(IndexedColor::Cyan),
-                };
+                let color = theme::color_for(curr.kind);
+                // The markup attributes are the semantics of the markup itself,
+                // not a color choice, so they aren't part of the theme.
                 let attr = match curr.kind {
                     HighlightKind::MarkupBold => Some(Attributes::Bold),
                     HighlightKind::MarkupItalic => Some(Attributes::Italic),

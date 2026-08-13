@@ -1,0 +1,123 @@
+#[display_name = "HTML"]
+#[path = "**/*.htm"]
+#[path = "**/*.html"]
+pub fn html() {
+    until /$/ {
+        yield other;
+
+        if /<!--/ {
+            // See the note in css.lsh for why the body consumes explicitly.
+            loop {
+                yield comment;
+                if /-->/ {
+                    yield comment;
+                    break;
+                }
+                if /[^-]+/ {
+                } else if /-/ {
+                }
+                await input;
+            }
+        } else if /<!(?i:DOCTYPE)[^>]*>/ {
+            yield constant.language;
+        } else if /<(script)\>/ {
+            yield $1 as constant.language;
+            yield other;
+            tag_attributes();
+            embedded_script();
+        } else if /<(style)\>/ {
+            yield $1 as constant.language;
+            yield other;
+            tag_attributes();
+            embedded_style();
+        } else if /<([\w:.-]+)/ {
+            yield $1 as constant.language;
+            yield other;
+            tag_attributes();
+        } else if /<\/([\w:.-]+)\s*>/ {
+            yield $1 as constant.language;
+            yield other;
+        } else if /(?:&#|&)[\w:.-]+;/ {
+            yield constant.numeric;
+        }
+
+        yield other;
+    }
+}
+
+/// Consumes attributes up to and including the closing `>` of a tag.
+fn tag_attributes() {
+    loop {
+        yield other;
+
+        if />/ {
+            break;
+        }
+
+        if /([\w:.@-]+)\s*=/ {
+            yield $1 as variable;
+            yield other;
+        } else if /"/ {
+            until /"/ {
+                yield string;
+                await input;
+            }
+            yield string;
+        } else if /'/ {
+            until /'/ {
+                yield string;
+                await input;
+            }
+            yield string;
+        } else if /[^\s"'=<>`]+/ {
+            // HTML, unlike XML, allows unquoted attribute values.
+            yield string;
+        } else if /\s+/ {
+        } else if /[^>]/ {
+            // Anything else, one character at a time, so that the loop always
+            // makes progress. Stops before `>` so the check above sees it.
+        }
+
+        await input;
+    }
+
+    yield other;
+}
+
+/// The contents of a `<script>` element, handed to the JavaScript definition.
+///
+/// The closing tag is only looked for at the start of a line, which is the
+/// same simplification `markdown()` makes for fenced code blocks. A one-line
+/// `<script>f()</script>` therefore keeps its script highlighting to the end
+/// of that line, which is a much smaller problem than losing the highlighting
+/// of an entire multi-line script.
+fn embedded_script() {
+    loop {
+        await input;
+        if /\s*<\/(script)\s*>/ {
+            yield $1 as constant.language;
+            yield other;
+            return;
+        } else {
+            javascript();
+            // javascript() may not have consumed the whole line, and it is our
+            // job to make sure `await input` moves on rather than spinning.
+            if /.*/ {}
+        }
+    }
+}
+
+/// The contents of a `<style>` element, handed to the CSS definition.
+fn embedded_style() {
+    loop {
+        await input;
+        if /\s*<\/(style)\s*>/ {
+            yield $1 as constant.language;
+            yield other;
+            return;
+        } else {
+            css();
+            if /.*/ {}
+        }
+    }
+}

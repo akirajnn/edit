@@ -9,7 +9,9 @@ mod highlighter;
 
 use std::path::Path;
 
-pub use definitions::{FILE_ASSOCIATIONS, HighlightKind, LANGUAGES};
+pub use definitions::{
+    FILE_ASSOCIATIONS, HIGHLIGHT_KIND_COUNT, HIGHLIGHT_KIND_NAMES, HighlightKind, LANGUAGES,
+};
 pub use highlighter::*;
 pub use lsh::runtime::Language;
 use stdext::glob::glob_match;

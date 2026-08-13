@@ -7,9 +7,13 @@ mod draw_editor;
 mod draw_filepicker;
 mod draw_menubar;
 mod draw_statusbar;
+mod draw_terminal;
+mod draw_theme;
 mod localization;
+mod reload;
 mod settings;
 mod state;
+mod watcher;
 
 use std::path::Path;
 use std::time::Duration;
@@ -19,6 +23,8 @@ use draw_editor::*;
 use draw_filepicker::*;
 use draw_menubar::*;
 use draw_statusbar::*;
+use draw_terminal::*;
+use reload::*;
 use edit::framebuffer::{self, IndexedColor};
 use edit::helpers::*;
 use edit::input::{self, kbmod, vk};
@@ -76,6 +82,17 @@ fn run() -> apperr::Result<()> {
     if let Err(err) = Settings::reload() {
         state.add_error(err);
     }
+    {
+        let settings = Settings::borrow();
+        if let Some(theme) = settings.theme {
+            edit::theme::setup(theme);
+        }
+        state.theme_name = if settings.theme_name.is_empty() {
+            "default".to_string()
+        } else {
+            settings.theme_name.clone()
+        };
+    }
 
     if handle_args(&mut state)? {
         return Ok(());
@@ -117,6 +134,10 @@ fn run() -> apperr::Result<()> {
 
     sys::inject_window_size_into_stdin();
 
+    // Watches the open files so that edits made by another program -- a build
+    // script, git, or an agent running in the terminal panel -- show up here.
+    let watcher = watcher::Watcher::new();
+
     #[cfg(feature = "debug-latency")]
     let mut last_latency_width = 0;
 
@@ -138,6 +159,13 @@ fn run() -> apperr::Result<()> {
             {
                 time_beg = std::time::Instant::now();
                 passes = 0usize;
+            }
+
+            // The read above may have returned because the watcher woke us.
+            // Whatever this changes gets picked up by the draw pass below;
+            // every iteration of this loop renders.
+            if watcher.take_dirty() {
+                handle_external_changes(&mut state);
             }
 
             let vt_iter = vt_parser.parse(&input);
@@ -173,8 +201,13 @@ fn run() -> apperr::Result<()> {
         }
 
         if state.exit {
+            // Kill the child before the terminal is handed back, so that it
+            // can't keep writing over whatever comes next.
+            shutdown_terminal(&mut state);
             break;
         }
+
+        watcher.set_paths(state.documents.paths());
 
         // Render the UI and write it to the terminal.
         {
@@ -337,8 +370,13 @@ fn print_version() {
 }
 
 fn draw(ctx: &mut Context, state: &mut State) {
+    // Before anything else: while the panel has focus it forwards nearly every
+    // key to the child, so its own shortcuts have to be claimed up front.
+    draw_terminal_shortcuts(ctx, state);
+
     draw_menubar(ctx, state);
     draw_editor(ctx, state);
+    draw_terminal(ctx, state);
     draw_statusbar(ctx, state);
 
     if state.wants_close {
@@ -359,6 +397,9 @@ fn draw(ctx: &mut Context, state: &mut State) {
     if state.wants_language_picker {
         draw_dialog_language_change(ctx, state);
     }
+    if state.wants_theme_picker {
+        draw_theme::draw_dialog_theme_change(ctx, state);
+    }
     if state.wants_encoding_change != StateEncodingChange::None {
         draw_dialog_encoding_change(ctx, state);
     }
@@ -367,6 +408,9 @@ fn draw(ctx: &mut Context, state: &mut State) {
     }
     if state.wants_about {
         draw_dialog_about(ctx, state);
+    }
+    if state.wants_reload_prompt.is_some() {
+        draw_reload_prompt(ctx, state);
     }
     if ctx.clipboard_ref().wants_host_sync() {
         draw_handle_clipboard_change(ctx, state);
