@@ -70,7 +70,7 @@ impl Pty {
             // it doesn't survive into the child past exec.
             let master = check_ret(libc::posix_openpt(libc::O_RDWR))?;
             set_cloexec(master);
-            let master = OwnedFd(master);
+            let mut master = OwnedFd(master);
 
             check_ret(libc::grantpt(master.0))?;
             check_ret(libc::unlockpt(master.0))?;
@@ -87,7 +87,7 @@ impl Pty {
             // Duplicate master for the reader thread; also O_CLOEXEC.
             let reader_fd = check_ret(libc::dup(master.0))?;
             set_cloexec(reader_fd);
-            let reader_fd = OwnedFd(reader_fd);
+            let mut reader_fd = OwnedFd(reader_fd);
 
             let pid = check_ret(libc::fork())?;
 
@@ -282,53 +282,55 @@ unsafe fn child_exec(
     argv: &[CString],
     cwd: Option<&CStr>,
 ) -> ! {
-    // New session: we have no controlling terminal yet.
-    libc::setsid();
+    unsafe {
+        // New session: we have no controlling terminal yet.
+        libc::setsid();
 
-    // Open the slave side of the PTY.
-    let slave = libc::open(slave_name.as_ptr(), libc::O_RDWR);
-    if slave < 0 {
-        libc::_exit(1);
+        // Open the slave side of the PTY.
+        let slave = libc::open(slave_name.as_ptr(), libc::O_RDWR);
+        if slave < 0 {
+            libc::_exit(1);
+        }
+
+        // Acquire the slave as our controlling terminal.
+        // On Linux the second arg is a "steal" flag (0 = don't steal).
+        // On macOS/BSD the arg is ignored.
+        libc::ioctl(slave, libc::TIOCSCTTY as _, 0i32);
+
+        // Redirect stdio to the slave PTY.
+        if libc::dup2(slave, libc::STDIN_FILENO) < 0 {
+            libc::_exit(1);
+        }
+        if libc::dup2(slave, libc::STDOUT_FILENO) < 0 {
+            libc::_exit(1);
+        }
+        if libc::dup2(slave, libc::STDERR_FILENO) < 0 {
+            libc::_exit(1);
+        }
+
+        // Close the original slave fd now that it's been dup2'd to 0/1/2.
+        if slave > libc::STDERR_FILENO {
+            libc::close(slave);
+        }
+
+        // master_fd has O_CLOEXEC so execvp will close it automatically, but
+        // close it explicitly here to keep things tidy before the exec.
+        libc::close(master_fd);
+
+        // Change working directory if requested.
+        if let Some(dir) = cwd {
+            // Ignore errors: the shell will report them if the dir is wrong.
+            libc::chdir(dir.as_ptr());
+        }
+
+        // Build a null-terminated pointer array for execvp.
+        let mut ptrs: Vec<*const libc::c_char> = argv.iter().map(|s| s.as_ptr()).collect();
+        ptrs.push(std::ptr::null());
+
+        libc::execvp(argv[0].as_ptr(), ptrs.as_ptr());
+        // exec failed (command not found, permission denied, …).
+        libc::_exit(127);
     }
-
-    // Acquire the slave as our controlling terminal.
-    // On Linux the second arg is a "steal" flag (0 = don't steal).
-    // On macOS/BSD the arg is ignored.
-    libc::ioctl(slave, libc::TIOCSCTTY as _, 0i32);
-
-    // Redirect stdio to the slave PTY.
-    if libc::dup2(slave, libc::STDIN_FILENO) < 0 {
-        libc::_exit(1);
-    }
-    if libc::dup2(slave, libc::STDOUT_FILENO) < 0 {
-        libc::_exit(1);
-    }
-    if libc::dup2(slave, libc::STDERR_FILENO) < 0 {
-        libc::_exit(1);
-    }
-
-    // Close the original slave fd now that it's been dup2'd to 0/1/2.
-    if slave > libc::STDERR_FILENO {
-        libc::close(slave);
-    }
-
-    // master_fd has O_CLOEXEC so execvp will close it automatically, but
-    // close it explicitly here to keep things tidy before the exec.
-    libc::close(master_fd);
-
-    // Change working directory if requested.
-    if let Some(dir) = cwd {
-        // Ignore errors: the shell will report them if the dir is wrong.
-        libc::chdir(dir.as_ptr());
-    }
-
-    // Build a null-terminated pointer array for execvp.
-    let mut ptrs: Vec<*const libc::c_char> = argv.iter().map(|s| s.as_ptr()).collect();
-    ptrs.push(std::ptr::null());
-
-    libc::execvp(argv[0].as_ptr(), ptrs.as_ptr());
-    // exec failed (command not found, permission denied, …).
-    libc::_exit(127);
 }
 
 /// RAII wrapper that closes a file descriptor on drop.
