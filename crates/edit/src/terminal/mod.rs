@@ -248,15 +248,16 @@ impl Drop for Terminal {
 }
 
 #[cfg(test)]
-mod tests {
+mod test_helpers {
+    use std::thread;
     use std::time::{Duration, Instant};
 
     use super::*;
 
-    const SIZE: Size = Size { width: 60, height: 12 };
+    pub const SIZE: Size = Size { width: 60, height: 12 };
 
-    /// Polls until `predicate` holds, so tests don't depend on ConPTY's timing.
-    fn poll_until(term: &mut Terminal, what: &str, predicate: impl Fn(&Terminal) -> bool) {
+    /// Polls until `predicate` holds, so tests don't depend on the pty's timing.
+    pub fn poll_until(term: &mut Terminal, what: &str, predicate: impl Fn(&Terminal) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(30);
         while Instant::now() < deadline {
             term.poll();
@@ -268,7 +269,7 @@ mod tests {
         panic!("timed out waiting for {what}:\n{}", dump(term));
     }
 
-    fn dump(term: &Terminal) -> String {
+    pub fn dump(term: &Terminal) -> String {
         let mut out = String::new();
         for y in 0..term.screen().size().height {
             for cell in term.screen().visible_row(y) {
@@ -282,9 +283,15 @@ mod tests {
         out
     }
 
-    fn contains(term: &Terminal, needle: &str) -> bool {
+    pub fn contains(term: &Terminal, needle: &str) -> bool {
         dump(term).contains(needle)
     }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::test_helpers::*;
+    use super::*;
 
     #[test]
     fn runs_a_command_and_shows_its_output() {
@@ -318,6 +325,51 @@ mod tests {
         // usual way a multi-byte character ends up straddling two reads.
         let mut term = Terminal::spawn("cmd.exe", None, SIZE, 100).unwrap();
         term.write("echo 漢字測試\r\n".as_bytes());
+        poll_until(&mut term, "the wide characters", |t| contains(t, "漢字測試"));
+        assert!(!dump(&term).contains('\u{fffd}'), "replacement characters in:\n{}", dump(&term));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::test_helpers::*;
+    use super::*;
+
+    #[test]
+    fn runs_a_command_and_shows_its_output() {
+        let mut term = Terminal::spawn("sh", None, SIZE, 100).unwrap();
+        term.write(b"echo terminal-works\n");
+        poll_until(&mut term, "the echoed output", |t| contains(t, "terminal-works"));
+    }
+
+    #[test]
+    fn notices_the_child_exiting() {
+        // `parse_command` only splits on whitespace, so `sh -c 'exit 3'`
+        // wouldn't reach the shell intact; drive it interactively instead.
+        let mut term = Terminal::spawn("sh", None, SIZE, 100).unwrap();
+        term.write(b"exit 3\n");
+        poll_until(&mut term, "the exit code", |t| t.exit_code().is_some());
+        assert_eq!(term.exit_code(), Some(3));
+        assert!(!term.is_running());
+    }
+
+    #[test]
+    fn resize_reaches_the_child() {
+        let mut term = Terminal::spawn("sh", None, SIZE, 100).unwrap();
+        term.resize(Size { width: 100, height: 30 });
+        assert_eq!(term.screen().size(), Size { width: 100, height: 30 });
+
+        // Ask the child's tty itself, rather than trusting our own screen size.
+        term.write(b"stty size\n");
+        poll_until(&mut term, "the reported size", |t| contains(t, "30 100"));
+    }
+
+    #[test]
+    fn survives_output_split_mid_character() {
+        // The pty hands over arbitrary byte counts, and CJK output is the
+        // usual way a multi-byte character ends up straddling two reads.
+        let mut term = Terminal::spawn("sh", None, SIZE, 100).unwrap();
+        term.write("echo 漢字測試\n".as_bytes());
         poll_until(&mut term, "the wide characters", |t| contains(t, "漢字測試"));
         assert!(!dump(&term).contains('\u{fffd}'), "replacement characters in:\n{}", dump(&term));
     }

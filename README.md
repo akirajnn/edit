@@ -18,7 +18,7 @@ I wanted to write .NET Core from the console — vibe coding, with an AI CLI sit
 
 So this fork is an attempt to grow it into something you can actually develop in — a light console IDE for .NET Core, TypeScript, or whatever I happen to be working in. Everything here started as something I wanted while working, not as a feature list: a terminal panel so a build and an agent can run beside the file I'm editing, detection of files changed behind my back, a Markdown preview, syntax colors I can live with. It's a personal tool first, and I use it every day.
 
-The one thing it isn't yet is properly cross-platform. Upstream runs on Windows, macOS and Linux; the terminal panel here is built on ConPTY and is Windows-only so far. That's the gap I'd most like to close.
+The terminal panel started out Windows-only, built on ConPTY. It now also runs on Linux and macOS via the POSIX PTY API — CI covers Windows and Linux; macOS shares the same Unix code path but isn't CI-verified there yet.
 
 ## What this fork adds
 
@@ -255,7 +255,7 @@ Visual Studio C++ build tools | Linking on Windows. Rust's default `x86_64-pc-wi
 [git](https://git-scm.com/downloads) | Cloning this fork. | `winget install Git.Git`
 [glow](https://github.com/charmbracelet/glow) | The Markdown preview (<kbd>F7</kbd>). **Optional** — everything else works without it, and the preview tells you if it's missing. | `winget install charmbracelet.glow`
 
-The terminal panel needs nothing extra: it's built on ConPTY, which is part of Windows. On Linux you additionally need a C compiler, and ICU if you want Search and Replace — see [Notes to Package Maintainers](#icu-library-name-soname).
+The terminal panel needs nothing extra on any platform: it's built on ConPTY on Windows, and on the POSIX PTY API (part of libc) on macOS and Linux. On Linux you additionally need a C compiler, and ICU if you want Search and Replace — see [Notes to Package Maintainers](#icu-library-name-soname).
 
 > [!TIP]
 > After installing anything with WinGet, open a **new** terminal before checking. `PATH` changes don't reach shells that are already running, which looks exactly like the install having failed.
