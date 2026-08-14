@@ -32,8 +32,11 @@ pub struct Pty {
     master_fd: c_int,
     /// PID of the child process.
     child_pid: libc::pid_t,
-    /// Cached exit status once the child has been reaped by `try_exit_code`.
-    /// Avoids calling `waitpid` on an already-reaped PID.
+    /// Set once the child has been reaped, or has turned out to be unreapable.
+    /// Stops `try_exit_code` from calling `waitpid` on every frame, and keeps
+    /// us from ever signalling a PID the kernel is free to hand out again.
+    reaped: Cell<bool>,
+    /// The exit status from the reaping `waitpid`, when we managed to get one.
     cached_exit: Cell<Option<u32>>,
 }
 
@@ -44,10 +47,6 @@ pub struct PtyReader {
     /// A `dup` of the master fd, used only for reading.
     master_fd: c_int,
 }
-
-// SAFETY: A raw file descriptor has no thread affinity.
-// `PtyReader` holds exclusive ownership of its fd for reading.
-unsafe impl Send for PtyReader {}
 
 impl Pty {
     /// Spawns `command` in a new pseudo terminal of the given size.
@@ -66,9 +65,10 @@ impl Pty {
             })?;
 
         unsafe {
-            // Open master PTY.  We set O_CLOEXEC afterwards via fcntl so that
-            // it doesn't survive into the child past exec.
-            let master = check_ret(libc::posix_openpt(libc::O_RDWR))?;
+            // Open master PTY.  `O_CLOEXEC` isn't portable here (macOS rejects
+            // it), so we set it afterwards via fcntl instead.  `O_NOCTTY` keeps
+            // the master from becoming our controlling terminal.
+            let master = check_ret(libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY))?;
             set_cloexec(master);
             let mut master = OwnedFd(master);
 
@@ -84,16 +84,27 @@ impl Pty {
                 libc::winsize { ws_row: height, ws_col: width, ws_xpixel: 0, ws_ypixel: 0 };
             libc::ioctl(master.0, libc::TIOCSWINSZ, &ws);
 
-            // Duplicate master for the reader thread; also O_CLOEXEC.
-            let reader_fd = check_ret(libc::dup(master.0))?;
-            set_cloexec(reader_fd);
+            // Duplicate master for the reader thread.  `F_DUPFD_CLOEXEC`
+            // rather than `dup` + fcntl: it's atomic, so another thread
+            // exec'ing in between can't inherit the descriptor.
+            let reader_fd = check_ret(libc::fcntl(master.0, libc::F_DUPFD_CLOEXEC, 0))?;
             let mut reader_fd = OwnedFd(reader_fd);
+
+            // Build the null-terminated pointer array for `execvp` *before*
+            // forking.  Only async-signal-safe calls are allowed between
+            // `fork` and `exec`, and allocating is not one of them: this
+            // process is multi-threaded, so if another thread happened to hold
+            // the allocator's lock at the moment we forked, the child would
+            // deadlock instead of exec'ing.
+            let mut argv_ptrs: Vec<*const libc::c_char> =
+                argv.iter().map(|s| s.as_ptr()).collect();
+            argv_ptrs.push(std::ptr::null());
 
             let pid = check_ret(libc::fork())?;
 
             if pid == 0 {
                 // Child: configure the terminal, then exec.  Never returns.
-                child_exec(master.0, &slave, &argv, cwd_c.as_deref());
+                child_exec(master.0, &slave, &argv_ptrs, cwd_c.as_deref());
             }
 
             // Parent.
@@ -101,6 +112,7 @@ impl Pty {
                 Pty {
                     master_fd: master.take(),
                     child_pid: pid as libc::pid_t,
+                    reaped: Cell::new(false),
                     cached_exit: Cell::new(None),
                 },
                 PtyReader { master_fd: reader_fd.take() },
@@ -109,6 +121,13 @@ impl Pty {
     }
 
     /// Writes to the child's stdin.
+    ///
+    /// The master fd is blocking, so this blocks until the child has consumed
+    /// everything.  A child that has stopped reading can therefore stall the
+    /// caller once the PTY buffer (~64 KiB) fills.  Making the fd non-blocking
+    /// is not an option here: [`PtyReader`] holds a `dup` of this descriptor
+    /// and so shares its file status flags, which would turn the reader
+    /// thread's blocking `read` into a busy loop.
     pub fn write(&self, mut data: &[u8]) -> io::Result<()> {
         while !data.is_empty() {
             let ret =
@@ -119,6 +138,15 @@ impl Pty {
                     continue;
                 }
                 return Err(err);
+            }
+            if ret == 0 {
+                // POSIX leaves a zero return unspecified for a non-empty
+                // write.  Looping would spin forever on an unchanged slice,
+                // so report it instead.
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "write to the pty returned 0",
+                ));
             }
             data = &data[ret as usize..];
         }
@@ -139,25 +167,37 @@ impl Pty {
     /// Once this returns `Some`, the result is cached; subsequent calls return
     /// the same value without calling `waitpid` again.
     pub fn try_exit_code(&self) -> Option<u32> {
-        if let Some(code) = self.cached_exit.get() {
-            return Some(code);
+        if self.reaped.get() {
+            return self.cached_exit.get();
         }
+
         let mut status = 0i32;
         let ret = unsafe { libc::waitpid(self.child_pid, &mut status, libc::WNOHANG) };
-        let code = if ret == self.child_pid {
-            if libc::WIFEXITED(status) {
-                Some(libc::WEXITSTATUS(status) as u32)
-            } else if libc::WIFSIGNALED(status) {
-                Some(128 + libc::WTERMSIG(status) as u32)
-            } else {
-                None
-            }
+
+        if ret == 0 {
+            return None; // Still running.
+        }
+        if ret < 0 {
+            // Almost certainly ECHILD: something already reaped the child, or
+            // SIGCHLD is SIG_IGN so the kernel did it for us. Either way the
+            // status is gone for good and the PID is no longer ours, so mark
+            // it reaped rather than retrying forever. The caller fills in an
+            // exit code of its own once the reader reports EOF.
+            self.reaped.set(true);
+            return None;
+        }
+
+        // `WNOHANG` alone only reports children that terminated, so reaching
+        // here means the child is gone.
+        self.reaped.set(true);
+        let code = if libc::WIFEXITED(status) {
+            Some(libc::WEXITSTATUS(status) as u32)
+        } else if libc::WIFSIGNALED(status) {
+            Some(128 + libc::WTERMSIG(status) as u32)
         } else {
             None
         };
-        if let Some(c) = code {
-            self.cached_exit.set(Some(c));
-        }
+        self.cached_exit.set(code);
         code
     }
 }
@@ -165,13 +205,28 @@ impl Pty {
 impl Drop for Pty {
     fn drop(&mut self) {
         unsafe {
-            if self.cached_exit.get().is_none() {
-                // Child wasn't reaped yet; kill it and wait.
-                libc::kill(self.child_pid, libc::SIGKILL);
+            // Poll once more first: this both catches a child that exited on
+            // its own and, crucially, tells us whether the PID is still ours
+            // to signal.
+            self.try_exit_code();
+
+            if !self.reaped.get() {
+                // Child is still running; kill it and wait.
+                //
+                // Signal the whole process group, not just the child.  The
+                // child called `setsid`, so it leads its own group and the
+                // negative pid can't reach anything of ours.  Killing only the
+                // child would leave its background jobs holding the slave
+                // side open, so the master would never report EIO and the
+                // reader thread would block forever.
+                if libc::kill(-self.child_pid, libc::SIGKILL) < 0 {
+                    // No group (child died before `setsid` took effect, say).
+                    libc::kill(self.child_pid, libc::SIGKILL);
+                }
                 let mut status = 0i32;
                 libc::waitpid(self.child_pid, &mut status, 0);
+                self.reaped.set(true);
             }
-            // cached_exit is Some → child was already reaped by try_exit_code.
             libc::close(self.master_fd);
         }
     }
@@ -276,10 +331,14 @@ fn parse_command(command: &str) -> io::Result<Vec<CString>> {
 /// Sets up the slave PTY as the controlling terminal, redirects stdio,
 /// optionally changes directory, and execs the command.  Calls `_exit(1)` on
 /// any error so it never returns normally.
+///
+/// `argv` must be the null-terminated pointer array for `execvp`, built by the
+/// caller before the fork; everything this function does has to be
+/// async-signal-safe, so it must not allocate.
 unsafe fn child_exec(
     master_fd: c_int,
     slave_name: &CStr,
-    argv: &[CString],
+    argv: &[*const libc::c_char],
     cwd: Option<&CStr>,
 ) -> ! {
     unsafe {
@@ -295,7 +354,18 @@ unsafe fn child_exec(
         // Acquire the slave as our controlling terminal.
         // On Linux the second arg is a "steal" flag (0 = don't steal).
         // On macOS/BSD the arg is ignored.
-        libc::ioctl(slave, libc::TIOCSCTTY as _, 0i32);
+        if libc::ioctl(slave, libc::TIOCSCTTY as _, 0i32) < 0 {
+            // The `open` above may already have installed the slave as our
+            // controlling terminal, which makes this ioctl redundant and its
+            // failure harmless.  So only give up if we really have no terminal
+            // -- without one the shell gets no job control and Ctrl-C is dead,
+            // which is far more confusing than an exit code.
+            let tty = libc::open(c"/dev/tty".as_ptr(), libc::O_RDONLY);
+            if tty < 0 {
+                libc::_exit(126);
+            }
+            libc::close(tty);
+        }
 
         // Redirect stdio to the slave PTY.
         if libc::dup2(slave, libc::STDIN_FILENO) < 0 {
@@ -323,11 +393,7 @@ unsafe fn child_exec(
             libc::chdir(dir.as_ptr());
         }
 
-        // Build a null-terminated pointer array for execvp.
-        let mut ptrs: Vec<*const libc::c_char> = argv.iter().map(|s| s.as_ptr()).collect();
-        ptrs.push(std::ptr::null());
-
-        libc::execvp(argv[0].as_ptr(), ptrs.as_ptr());
+        libc::execvp(argv[0], argv.as_ptr());
         // exec failed (command not found, permission denied, …).
         libc::_exit(127);
     }

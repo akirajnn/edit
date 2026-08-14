@@ -178,12 +178,17 @@ impl Drop for Deinit {
                 // Restore the original terminal modes.
                 libc::tcsetattr(STATE.stdout, libc::TCSANOW, &termios);
             }
-            for fd in STATE.wake_pipe {
-                if fd >= 0 {
-                    libc::close(fd);
-                }
-            }
-            STATE.wake_pipe = [-1, -1];
+            // The wake pipe is deliberately *not* closed here.
+            //
+            // `wake()` is called from threads that are never joined (the
+            // terminal panel's reader threads, the file watcher), so one of
+            // them can be sitting between the `write_fd >= 0` check and the
+            // `write` while we run.  Closing the fd would leave it writing to
+            // a descriptor number the process is free to hand out again the
+            // next time it opens a file, which would corrupt that file.
+            //
+            // Leaking two fds until exit costs nothing, and the Windows side
+            // leaks its wake event for exactly the same reason.
         }
     }
 }
