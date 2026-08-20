@@ -376,6 +376,41 @@ The terminal panel needs nothing extra on any platform: it's built on ConPTY on 
     cargo build --release
     ```
 
+### What the binary needs at run time
+
+Almost nothing. Editing, syntax highlighting, themes, word completion, the terminal panel and file change detection all work with no external anything.
+
+The exceptions, all of which degrade rather than fail:
+
+Wanted by | Needed for | Without it
+--- | --- | ---
+`icu.dll` / `libicuuc` | Find and Replace | Search is disabled; everything else is unaffected. Fuzzy matching falls back to ASCII case folding, so completion and the file picker keep working. Windows 10 1703 and later ship ICU with the OS.
+`glow` | <kbd>F7</kbd> Markdown preview | A dialog says it isn't installed. Any other renderer works via `markdown.previewCommand`.
+A shell | The terminal panel | Not a real concern; `%COMSPEC%` and `$SHELL` always exist.
+
+None of these are loaded until something asks for them, so they cost nothing if you never use the feature.
+
+### A single self-contained executable
+
+The recommended build above already produces one. `.cargo/release.toml` links the MSVC runtime statically while keeping the UCRT dynamic, which is what removes the dependency on `VCRUNTIME140.dll` -- an optional Windows component that arrives with the Visual C++ Redistributable and so cannot be assumed on a machine you are copying a binary to.
+
+A plain `cargo build --release` does *not* do this. Measured on x64:
+
+Build | Size | Needs `VCRUNTIME140.dll`
+--- | --- | ---
+`cargo build --release` | 561 KB | yes
+`--config .cargo/release.toml` | 583 KB | no
+
+What is left imports only `KERNEL32.dll`, `ntdll.dll` and the `api-ms-win-*` stubs, all of which are part of Windows 10 and later.
+
+The nightly path additionally wants the standard library source, since it rebuilds it:
+
+```sh
+rustup component add rust-src
+```
+
+Without it the build stops with *"library/Cargo.lock does not exist, unable to build with the standard library"*.
+
 ### Build Configuration
 
 You can set the following environment variables at build-time to configure the build:
