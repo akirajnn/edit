@@ -213,8 +213,42 @@ pub struct Screen {
 
     /// How far back the user scrolled, in lines. 0 means "following the output".
     view_offset: usize,
+    /// Lines evicted from the front of the scrollback since the beginning.
+    ///
+    /// Indices into `lines` shift whenever the scrollback overflows, so they
+    /// can't identify a line for longer than it takes to produce more output.
+    /// Adding this to one gives an id that never changes, which is what lets a
+    /// selection stay on the text it was made on.
+    dropped: usize,
+    /// The text the user has selected with the mouse, if any.
+    selection: Option<Selection>,
+    /// Whether the mouse button is still down on an in-progress selection.
+    ///
+    /// Kept here rather than in the UI so that the anchor is fixed once, at
+    /// the press. Re-deriving it from a screen row every frame would let it
+    /// drift onto different text if the child printed something mid-drag.
+    selecting: bool,
     /// Bumped on every change so the UI knows whether it has to redraw.
     generation: u64,
+}
+
+/// A range of text the user selected with the mouse.
+///
+/// Both ends are `(line id, column)`. Line ids rather than screen rows, so
+/// that scrolling the view -- or the child printing more output -- doesn't
+/// move the selection off the text it was made on.
+#[derive(Clone, Copy)]
+struct Selection {
+    anchor: (usize, CoordType),
+    cursor: (usize, CoordType),
+}
+
+impl Selection {
+    /// The two ends in reading order, since a selection can be dragged
+    /// backwards just as easily as forwards.
+    fn ordered(&self) -> ((usize, CoordType), (usize, CoordType)) {
+        if self.anchor <= self.cursor { (self.anchor, self.cursor) } else { (self.cursor, self.anchor) }
+    }
 }
 
 /// The shape the application asked the cursor to take (DECSCUSR).
@@ -267,6 +301,9 @@ impl Screen {
             title: String::new(),
 
             view_offset: 0,
+            dropped: 0,
+            selection: None,
+            selecting: false,
             generation: 1,
         }
     }
@@ -310,6 +347,133 @@ impl Screen {
         self.view_offset
     }
 
+    // ---- selection ---------------------------------------------------------
+
+    /// The id of the line currently shown at screen row `y`.
+    ///
+    /// Stable for the life of the line, unlike an index into `lines`.
+    fn line_id(&self, y: CoordType) -> usize {
+        let g = self.grid();
+        let index = (g.origin() + y.max(0) as usize).saturating_sub(self.view_offset);
+        self.dropped + index.min(g.lines.len().saturating_sub(1))
+    }
+
+    /// Where a line id sits in `lines`, if it hasn't been evicted.
+    fn line_index(&self, id: usize) -> Option<usize> {
+        let index = id.checked_sub(self.dropped)?;
+        (index < self.grid().lines.len()).then_some(index)
+    }
+
+    /// Begins a selection at a screen position.
+    pub fn selection_begin(&mut self, y: CoordType, x: CoordType) {
+        let at = (self.line_id(y), x.max(0));
+        self.selection = Some(Selection { anchor: at, cursor: at });
+        self.selecting = true;
+        self.touch();
+    }
+
+    /// Whether a drag is in progress.
+    pub fn is_selecting(&self) -> bool {
+        self.selecting
+    }
+
+    /// Ends the drag, keeping whatever was selected.
+    pub fn selection_end(&mut self) {
+        self.selecting = false;
+    }
+
+    /// Extends the selection started by [`Self::selection_begin`].
+    pub fn selection_extend(&mut self, y: CoordType, x: CoordType) {
+        if self.selection.is_none() {
+            return;
+        }
+
+        // Resolved before taking the mutable borrow: `line_id` reads the grid.
+        let at = (self.line_id(y), x.max(0));
+
+        if let Some(selection) = self.selection.as_mut()
+            && selection.cursor != at
+        {
+            selection.cursor = at;
+            self.touch();
+        }
+    }
+
+    /// Returns whether there was one to clear.
+    pub fn selection_clear(&mut self) -> bool {
+        let had = self.selection.is_some();
+        self.selection = None;
+        self.selecting = false;
+        if had {
+            self.touch();
+        }
+        had
+    }
+
+    pub fn has_selection(&self) -> bool {
+        self.selection.as_ref().is_some_and(|s| s.anchor != s.cursor)
+    }
+
+    /// Whether the cell at a screen position is inside the selection.
+    ///
+    /// Called for every visible cell, so it stops at the first branch when
+    /// nothing is selected -- which is nearly always.
+    pub fn is_selected(&self, y: CoordType, x: CoordType) -> bool {
+        let Some(selection) = &self.selection else {
+            return false;
+        };
+        let (start, end) = selection.ordered();
+        let at = (self.line_id(y), x);
+        at >= start && at < end
+    }
+
+    /// The selected text, ready for the clipboard.
+    ///
+    /// Trailing blanks are dropped from each line: a terminal pads every line
+    /// out to the full width, and pasting that padding back is never what
+    /// anyone wanted.
+    pub fn selection_text(&self) -> Option<String> {
+        let selection = self.selection.as_ref()?;
+        let (start, end) = selection.ordered();
+        if start == end {
+            return None;
+        }
+
+        let g = self.grid();
+        let mut out = String::new();
+
+        for id in start.0..=end.0 {
+            let Some(index) = self.line_index(id) else {
+                continue;
+            };
+            let row = &g.lines[index];
+
+            let from = if id == start.0 { start.1.max(0) as usize } else { 0 };
+            let to = if id == end.0 { (end.1.max(0) as usize).min(row.len()) } else { row.len() };
+            if from >= to {
+                if id != end.0 {
+                    out.push('\n');
+                }
+                continue;
+            }
+
+            let mut line = String::new();
+            for cell in &row[from..to] {
+                // The filler cell of a wide character carries no text.
+                if !cell.attr.has(CellAttributes::WIDE_TRAILER) {
+                    line.push(cell.ch);
+                }
+            }
+
+            out.push_str(line.trim_end());
+            if id != end.0 {
+                out.push('\n');
+            }
+        }
+
+        (!out.is_empty()).then_some(out)
+    }
+
     /// Scrolls the view by `delta` lines, positive meaning "towards history".
     pub fn scroll_view(&mut self, delta: CoordType) {
         let max = self.scrollback_len() as CoordType;
@@ -341,6 +505,11 @@ impl Screen {
         if width == self.grid().width && height == self.grid().height {
             return;
         }
+
+        // Reflowing moves every line, and can drop some off the front, so a
+        // selection would end up pointing at text that isn't there any more.
+        self.selection = None;
+        self.selecting = false;
 
         for grid in [&mut self.primary, &mut self.alternate] {
             resize_grid(grid, width, height);
@@ -535,9 +704,12 @@ impl Screen {
                 let grid = self.grid_mut();
                 let blank = vec![Cell::blank(&pen); grid.width as usize];
                 grid.lines.push_back(blank);
+                let mut evicted = 0;
                 while grid.scrollback_len() > grid.scrollback_limit {
                     grid.lines.pop_front();
+                    evicted += 1;
                 }
+                self.dropped += evicted;
             } else {
                 let grid = self.grid_mut();
                 let origin = grid.origin();
@@ -681,6 +853,9 @@ impl Screen {
 
     /// Switches to or from the alternate screen (DECSET 1049).
     pub fn set_alternate(&mut self, on: bool) {
+        // A different screen means different text under the same coordinates.
+        self.selection = None;
+        self.selecting = false;
         if on == self.on_alternate {
             return;
         }

@@ -10,6 +10,8 @@
 pub mod emulator;
 pub mod keymap;
 pub mod screen;
+#[cfg(test)]
+mod selection_tests;
 
 use std::io;
 use std::path::Path;

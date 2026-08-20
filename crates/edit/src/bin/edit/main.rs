@@ -387,10 +387,18 @@ fn print_help() {
 fn probe_keys() -> apperr::Result<()> {
     sys::switch_modes()?;
     sys::write_stdout(concat!(
-        "Press any key to see how the editor receives it.\r\n",
-        "Names shown here can be used in settings.json. Ctrl+Q quits.\r\n\r\n",
+        // The same mouse modes the editor itself turns on, so that what this
+        // reports is what the editor would receive. Host terminals often keep
+        // the right button for their own context menu or paste, and then the
+        // application never sees it -- which is exactly the kind of thing
+        // worth finding out here rather than by wondering why a click does
+        // nothing.
+        "\x1b[?1002;1006h",
+        "Press keys or click to see how the editor receives them.\r\n",
+        "Key names shown here can be used in settings.json. Ctrl+Q quits.\r\n\r\n",
     ));
 
+    let _mouse_off = MouseProbeModes;
     let mut vt_parser = vt::Parser::new();
     let mut input_parser = input::Parser::new();
 
@@ -423,12 +431,38 @@ fn probe_keys() -> apperr::Result<()> {
                 input::Input::Text(text) => {
                     sys::write_stdout(&format!("text {text:?}\r\n"));
                 }
+                input::Input::Mouse(mouse) => {
+                    let button = match mouse.state {
+                        input::InputMouseState::Left => "left",
+                        input::InputMouseState::Middle => "middle",
+                        input::InputMouseState::Right => "right",
+                        input::InputMouseState::Release => "release",
+                        input::InputMouseState::Scroll => "wheel",
+                        input::InputMouseState::None => "none",
+                    };
+                    sys::write_stdout(&format!(
+                        "mouse {button} at {},{}\r\n",
+                        mouse.position.x, mouse.position.y,
+                    ));
+                }
                 _ => {}
             }
         }
     }
 
     Ok(())
+}
+
+/// Turns the probe's mouse reporting back off however it exits.
+///
+/// Leaving it on would make the host terminal keep sending escape sequences at
+/// whatever runs next, which looks like the shell has started printing junk.
+struct MouseProbeModes;
+
+impl Drop for MouseProbeModes {
+    fn drop(&mut self) {
+        sys::write_stdout("\x1b[?1002;1006l");
+    }
 }
 
 fn print_version() {

@@ -71,6 +71,27 @@ fn draw_menu_terminal(ctx: &mut Context, state: &mut State) {
             crate::draw_terminal::resize_terminal(ctx, state, -1);
         }
     }
+    if state.terminal_visible && !state.terminals.is_empty() {
+        // The keyboard forms only reach the panel while it has the focus,
+        // since the child owns the unshifted keys. The menu always works.
+        if ctx.menubar_menu_button(
+            loc(LocId::TerminalScrollBack),
+            'B',
+            kbmod::SHIFT | vk::PRIOR,
+        ) {
+            crate::draw_terminal::scroll_terminal(state, 1);
+        }
+        if ctx.menubar_menu_button(
+            loc(LocId::TerminalScrollForward),
+            'F',
+            kbmod::SHIFT | vk::NEXT,
+        ) {
+            crate::draw_terminal::scroll_terminal(state, -1);
+        }
+        if ctx.menubar_menu_button(loc(LocId::TerminalCopy), 'Y', kbmod::CTRL_SHIFT | vk::C) {
+            crate::draw_terminal::copy_terminal_selection(ctx, state);
+        }
+    }
     if !state.terminals.is_empty() {
         if ctx.menubar_menu_button(loc(LocId::TerminalRestart), 'R', vk::NULL) {
             crate::draw_terminal::restart_terminal(state);

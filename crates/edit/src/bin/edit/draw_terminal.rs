@@ -210,6 +210,11 @@ pub fn draw_terminal_shortcuts(ctx: &mut Context, state: &mut State) {
     // Two bindings for the same thing because terminals disagree about which
     // modified arrow keys they forward. Neither is guaranteed, which is why
     // the Terminal menu carries these commands too.
+    } else if key == kbmod::CTRL_SHIFT | vk::C && copy_terminal_selection(ctx, state) {
+        // Nothing more to do; the guard did the work. Handled here rather than
+        // inside the terminal widget because selecting is done with the mouse,
+        // which works without the panel holding the focus -- so copying has to
+        // as well, or a selection made from the editor couldn't be copied.
     } else if key == kbmod::CTRL_SHIFT | vk::UP || key == kbmod::ALT_SHIFT | vk::UP {
         resize_terminal(ctx, state, 1);
     } else if key == kbmod::CTRL_SHIFT | vk::DOWN || key == kbmod::ALT_SHIFT | vk::DOWN {
@@ -220,6 +225,47 @@ pub fn draw_terminal_shortcuts(ctx: &mut Context, state: &mut State) {
 
     ctx.needs_rerender();
     ctx.set_input_consumed();
+}
+
+/// Copies the panel's selection, reporting whether there was one.
+///
+/// `Ctrl+Shift+C` rather than `Ctrl+C`, because the unshifted key has to stay
+/// the child's interrupt -- the same split every terminal emulator makes.
+pub fn copy_terminal_selection(ctx: &mut Context, state: &mut State) -> bool {
+    if !state.terminal_visible || state.terminals.is_empty() {
+        return false;
+    }
+
+    let index = state.terminal_active.min(state.terminals.len() - 1);
+    let terminal = state.terminals[index].clone();
+
+    // The borrow ends before the clipboard is touched, since `SemiRefCell`
+    // does no borrow checking in release builds.
+    let text = terminal.borrow().screen().selection_text();
+
+    match text {
+        Some(text) => {
+            ctx.clipboard_mut().write(text.into_bytes());
+            true
+        }
+        None => false,
+    }
+}
+
+/// Scrolls the panel by whole screens, positive meaning "towards history".
+pub fn scroll_terminal(state: &mut State, pages: CoordType) {
+    if state.terminals.is_empty() {
+        return;
+    }
+
+    let index = state.terminal_active.min(state.terminals.len() - 1);
+    let terminal = state.terminals[index].clone();
+    let mut terminal = terminal.borrow_mut();
+
+    // A page is the panel's own height, so this matches what the keyboard
+    // form does inside the widget.
+    let page = terminal.screen().size().height.max(1);
+    terminal.screen_mut().scroll_view(pages * page);
 }
 
 pub fn toggle_terminal(state: &mut State) {

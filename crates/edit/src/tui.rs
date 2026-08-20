@@ -164,7 +164,7 @@ use crate::terminal::screen::{
     CellAttributes as TerminalCellAttributes, Color as TerminalColor,
     CursorStyle as TerminalCursorStyle, MouseMode as TerminalMouseMode, Screen as TerminalScreen,
 };
-use crate::terminal::{RcTerminal, TerminalCell, keymap};
+use crate::terminal::{RcTerminal, Terminal, TerminalCell, keymap};
 use crate::{input, simd, unicode};
 
 /// Translates a viewport position into terminal cell coordinates.
@@ -374,6 +374,12 @@ pub struct Tui {
     /// Between mouse down and up, the position where the mouse was pressed.
     /// Otherwise, this contains Point::MIN.
     mouse_down_position: Point,
+    /// Which button started the current press.
+    ///
+    /// A release arrives as [`InputMouseState::Release`] whichever button it
+    /// was, so without this there is no way to tell a right-click from a
+    /// left one at the moment it completes.
+    mouse_down_button: InputMouseState,
     /// Node ID of the node that was clicked on.
     /// Used for tracking drag targets.
     left_mouse_down_target: u64,
@@ -450,6 +456,7 @@ impl Tui {
             mouse_position: Point::MIN,
             mouse_down_position: Point::MIN,
             left_mouse_down_target: 0,
+            mouse_down_button: InputMouseState::None,
             mouse_up_timestamp: std::time::Instant::now(),
             mouse_state: InputMouseState::None,
             mouse_is_drag: false,
@@ -571,6 +578,7 @@ impl Tui {
         if self.mouse_state > InputMouseState::Right {
             self.mouse_down_position = Point::MIN;
             self.mouse_down_node_path.clear();
+            self.mouse_down_button = InputMouseState::None;
             self.left_mouse_down_target = 0;
             self.mouse_state = InputMouseState::None;
             self.mouse_is_drag = false;
@@ -711,6 +719,7 @@ impl Tui {
                     // Gets reset at the start of this function.
                     self.left_mouse_down_target = target;
                     self.mouse_down_position = next_position;
+                    self.mouse_down_button = next_state;
                 } else if mouse_up {
                     // Transition from some mouse input to no mouse input --> The mouse button was released.
                     next_state = InputMouseState::Release;
@@ -995,6 +1004,33 @@ impl Tui {
                 self.framebuffer.replace_attr(rect, Attributes::All, to_framebuffer_attr(attr));
 
                 run_start = run_end;
+            }
+
+            // Painted over the styling, so selected text reads as selected
+            // whatever colors the child chose for it. Skipped entirely when
+            // nothing is selected, which is the usual case.
+            if screen.has_selection() {
+                let mut x = 0;
+                while x < cols {
+                    if !screen.is_selected(y, x) {
+                        x += 1;
+                        continue;
+                    }
+                    let mut end = x + 1;
+                    while end < cols && screen.is_selected(y, end) {
+                        end += 1;
+                    }
+
+                    let rect = Rect {
+                        left: target.left + x,
+                        top: line_y,
+                        right: target.left + end,
+                        bottom: line_y + 1,
+                    };
+                    self.framebuffer.reverse(rect);
+
+                    x = end;
+                }
             }
         }
 
@@ -2340,6 +2376,12 @@ impl<'a> Context<'a, '_> {
                 }
             }
 
+            // The pointer is handled whether or not the panel has focus: the
+            // wheel scrolls what it is over, which is what every other
+            // terminal does and what makes reading back output while the
+            // editor keeps the focus possible at all.
+            dirty |= self.terminal_handle_pointer(&term, &node_prev.borrow());
+
             if has_focus {
                 dirty |= self.terminal_handle_input(&term, &node_prev.borrow());
             }
@@ -2348,8 +2390,8 @@ impl<'a> Context<'a, '_> {
         dirty
     }
 
-    /// Forwards input to the child while the terminal has focus.
-    fn terminal_handle_input(&mut self, term: &RcTerminal, node_prev: &Node) -> bool {
+    /// Handles the wheel, and mouse selection, regardless of focus.
+    fn terminal_handle_pointer(&mut self, term: &RcTerminal, node_prev: &Node) -> bool {
         let mut term = term.borrow_mut();
         let mut dirty = false;
 
@@ -2398,7 +2440,96 @@ impl<'a> Context<'a, '_> {
             if let Some(bytes) = keymap::encode_mouse(&event, term.screen()) {
                 term.write(&bytes);
             }
+        } else if term.screen().mouse_mode == TerminalMouseMode::Off {
+            // Nobody is listening for mouse events, so the pointer is ours:
+            // dragging selects text, and the right button copies it.
+            dirty |= self.terminal_handle_right_click(&mut term, node_prev);
+            dirty |= self.terminal_handle_selection(&mut term, node_prev);
         }
+
+        dirty
+    }
+
+    /// Copies the selection when the right button is clicked over the panel.
+    ///
+    /// This is how a Windows console has always worked, and it is the only
+    /// pointer-driven way to copy here: `Ctrl+C` cannot be it, because a
+    /// terminal has to keep that as the child's interrupt.
+    ///
+    /// Deliberately copy-only. A console traditionally *pastes* on right-click
+    /// when nothing is selected, but an accidental paste into a live shell can
+    /// run whatever was on the clipboard, and there is already `Ctrl+V`.
+    fn terminal_handle_right_click(&mut self, term: &mut Terminal, node_prev: &Node) -> bool {
+        // On the release rather than the press, so holding the button down
+        // doesn't copy once per frame.
+        if self.tui.mouse_state != InputMouseState::Release
+            || self.tui.mouse_down_button != InputMouseState::Right
+            || !node_prev.inner_clipped.contains(self.tui.mouse_down_position)
+        {
+            return false;
+        }
+
+        let Some(text) = term.screen().selection_text() else {
+            return false;
+        };
+
+        self.tui.clipboard.write(text.into_bytes());
+        // Clearing is the acknowledgement: without it there is no sign that
+        // anything happened, and the panel has nowhere to put a message.
+        term.screen_mut().selection_clear();
+        true
+    }
+
+    /// Turns a press and drag into a selection.
+    ///
+    /// Only reached when the child hasn't asked for mouse reporting -- an
+    /// application that wants the mouse gets it, and selecting inside one
+    /// would fight with whatever it does with a drag.
+    fn terminal_handle_selection(&mut self, term: &mut Terminal, node_prev: &Node) -> bool {
+        let held = self.tui.mouse_state == InputMouseState::Left;
+        let released = self.tui.mouse_state == InputMouseState::Release;
+        let at = relative_to(node_prev, self.tui.mouse_position);
+
+        if term.screen().is_selecting() {
+            // Extended even when the pointer leaves the panel: a drag that
+            // runs off the edge still means "keep selecting".
+            if held {
+                term.screen_mut().selection_extend(at.y, at.x);
+                return true;
+            }
+            if released {
+                term.screen_mut().selection_extend(at.y, at.x);
+                term.screen_mut().selection_end();
+                return true;
+            }
+            // The button went away without a release reaching us.
+            term.screen_mut().selection_end();
+            return false;
+        }
+
+        // A press inside starts one, anchored where the button went down
+        // rather than where the pointer is now, so the first frame of a fast
+        // drag doesn't lose the beginning of the selection.
+        let down = self.tui.mouse_down_position;
+        if held && node_prev.inner_clipped.contains(down) {
+            let anchor = relative_to(node_prev, down);
+            term.screen_mut().selection_begin(anchor.y, anchor.x);
+            term.screen_mut().selection_extend(at.y, at.x);
+            return true;
+        }
+
+        // A click elsewhere puts the selection away.
+        if held && term.screen().has_selection() {
+            return term.screen_mut().selection_clear();
+        }
+
+        false
+    }
+
+    /// Forwards input to the child while the terminal has focus.
+    fn terminal_handle_input(&mut self, term: &RcTerminal, node_prev: &Node) -> bool {
+        let mut term = term.borrow_mut();
+        let mut dirty = false;
 
         // Once the child is gone there's nobody to type at, but its output is
         // still on screen and worth reading, so the keys that move through it
@@ -2430,6 +2561,23 @@ impl<'a> Context<'a, '_> {
         let mut consumed = false;
 
         if let Some(key) = self.input_keyboard {
+            // Claimed before anything reaches the child, because these are the
+            // only way to reach the scrollback and the clipboard while it is
+            // still running -- the unshifted keys all belong to the child.
+            let page = node_prev.inner.height().max(1);
+            let scroll = match key {
+                key if key == kbmod::SHIFT | vk::PRIOR => page,
+                key if key == kbmod::SHIFT | vk::NEXT => -page,
+                key if key == kbmod::CTRL_SHIFT | vk::HOME => CoordType::MAX / 2,
+                key if key == kbmod::CTRL_SHIFT | vk::END => CoordType::MIN / 2,
+                _ => 0,
+            };
+            if scroll != 0 {
+                term.screen_mut().scroll_view(scroll);
+                self.set_input_consumed();
+                return true;
+            }
+
             // Paste arrives as a synthesized Ctrl+V after the parser put the
             // text on the clipboard. Sending a literal 0x16 instead would be
             // useless in a terminal panel.

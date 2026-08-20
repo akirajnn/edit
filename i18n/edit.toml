@@ -2565,3 +2565,45 @@ pt-br = "Completar palavra"
 ru = "Дополнить слово"
 zh-hans = "补全单词"
 zh-hant = "補全單字"
+
+# Terminal menu: copy the text selected in the panel
+[TerminalCopy]
+en = "Copy Selection"
+de = "Auswahl kopieren"
+es = "Copiar selección"
+fr = "Copier la sélection"
+it = "Copia selezione"
+ja = "選択範囲をコピー"
+ko = "선택 영역 복사"
+pt-br = "Copiar seleção"
+ru = "Копировать выделение"
+zh-hans = "复制所选内容"
+zh-hant = "複製選取範圍"
+
+# Terminal menu: scroll the panel back through its output
+[TerminalScrollBack]
+en = "Scroll Back"
+de = "Zurückblättern"
+es = "Desplazar hacia atrás"
+fr = "Défiler vers le haut"
+it = "Scorri indietro"
+ja = "上にスクロール"
+ko = "위로 스크롤"
+pt-br = "Rolar para trás"
+ru = "Прокрутить назад"
+zh-hans = "向上滚动"
+zh-hant = "向上捲動"
+
+# Terminal menu: scroll the panel forward again
+[TerminalScrollForward]
+en = "Scroll Forward"
+de = "Vorwärtsblättern"
+es = "Desplazar hacia adelante"
+fr = "Défiler vers le bas"
+it = "Scorri avanti"
+ja = "下にスクロール"
+ko = "아래로 스크롤"
+pt-br = "Rolar para frente"
+ru = "Прокрутить вперёд"
+zh-hans = "向下滚动"
+zh-hant = "向下捲動"

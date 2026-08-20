@@ -52,12 +52,25 @@ Key | Action
 <kbd>Ctrl</kbd>+<kbd>F12</kbd> | Switch to the next tab
 <kbd>F6</kbd> | Move focus between the editor and the panel
 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> | Make the panel taller or shorter
+<kbd>Shift</kbd>+<kbd>PgUp</kbd>/<kbd>PgDn</kbd> | Scroll back through the output
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Home</kbd>/<kbd>End</kbd> | Jump to the top or bottom of the scrollback
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> | Copy the selected text
 
 Terminals disagree about which modified arrow keys they pass through, so the panel accepts two combinations for resizing and the **Terminal** menu carries the same commands for when neither arrives.
 
-While the panel has focus, almost every key goes to the child process; the shortcuts above are the exceptions. Use <kbd>F6</kbd> to get back to the editor. The mouse wheel scrolls the terminal's scrollback unless the application asked for mouse reporting.
+While the panel has focus, almost every key goes to the child process; the shortcuts above are the exceptions. Use <kbd>F6</kbd> to get back to the editor.
 
-When a child exits its tab stays open so you can read what it printed, and since there is no longer anything to type at, <kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>PgUp</kbd>/<kbd>PgDn</kbd> and <kbd>Home</kbd>/<kbd>End</kbd> scroll back through the output — useful for a build that scrolled past. <kbd>Enter</kbd> closes the tab.
+**Scrolling and selecting don't need the focus.** The mouse wheel scrolls whatever it is over, so you can read back through a build's output without leaving the file you are editing. Dragging selects text.
+
+To copy it, **right-click**, the way a Windows console has always worked. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> does the same, and so does **Terminal → Copy Selection** — worth knowing, because some host terminals keep the right button for their own context menu and never pass the click on. `edit --probe-keys` reports mouse clicks as well as keys, so you can see in a second whether yours does.
+
+Plain <kbd>Ctrl</kbd>+<kbd>C</kbd> is not copy and cannot be: it has to stay the child's interrupt, which is the whole reason terminals put copy on the shifted key. Right-click is copy-only here; pasting stays on <kbd>Ctrl</kbd>+<kbd>V</kbd>, since an accidental right-click paste into a live shell can run whatever was on the clipboard.
+
+A selection stays on the text it was made on: scrolling the view doesn't move it, and neither does the program printing more output. It is dropped when the panel is resized or the program switches to a full-screen view, since the text genuinely moves then.
+
+Both of these step aside for an application that asked for mouse reporting — inside `vim` or `htop`, the wheel and the pointer belong to it.
+
+When a child exits its tab stays open so you can read what it printed, and since there is no longer anything to type at, the unshifted <kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>PgUp</kbd>/<kbd>PgDn</kbd> and <kbd>Home</kbd>/<kbd>End</kbd> scroll too. <kbd>Enter</kbd> closes the tab.
 
 The same commands are available from the **Terminal** menu.
 
