@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 mod apperr;
+mod completion;
 mod diff;
 mod documents;
 mod draw_editor;
@@ -11,6 +12,7 @@ mod draw_preview;
 mod draw_statusbar;
 mod draw_terminal;
 mod draw_theme;
+mod keybind;
 mod localization;
 mod reload;
 mod settings;
@@ -26,7 +28,6 @@ use draw_filepicker::*;
 use draw_menubar::*;
 use draw_statusbar::*;
 use draw_terminal::*;
-use reload::*;
 use edit::framebuffer::{self, IndexedColor};
 use edit::helpers::*;
 use edit::input::{self, kbmod, vk};
@@ -35,6 +36,7 @@ use edit::tui::*;
 use edit::vt::{self, Token};
 use edit::{base64, path, sys, unicode};
 use localization::*;
+use reload::*;
 use state::*;
 use stdext::arena::{self, Arena, scratch_arena};
 use stdext::arena_format;
@@ -306,6 +308,10 @@ fn handle_args(state: &mut State) -> apperr::Result<bool> {
                 print_version();
                 return Ok(true);
             }
+            if arg == "--probe-keys" {
+                probe_keys()?;
+                return Ok(true);
+            }
         }
 
         let (arg, goto) = if goto_next {
@@ -365,8 +371,64 @@ fn print_help() {
         "    -g, --goto <FILE:LINE[:CHARACTER]>    Open a file at the specified line and character position\n",
         "    -h, --help                            Print this help message\n",
         "    -v, --version                         Print the version number\n",
+        "        --probe-keys                      Show how this terminal reports each key, for settings.json\n",
         "\n"
     ));
+}
+
+/// Prints the name of every key pressed, until Ctrl+Q.
+///
+/// A terminal only transmits the key combinations it has an encoding for, and
+/// an IME may take some of the rest before the terminal ever sees them. Which
+/// ones survive is a property of someone's machine, not something a default
+/// can know, so this reports what actually arrives -- and it names keys the
+/// way `completion.next` and friends accept them, so the answer can be pasted
+/// straight into the settings.
+fn probe_keys() -> apperr::Result<()> {
+    sys::switch_modes()?;
+    sys::write_stdout(concat!(
+        "Press any key to see how the editor receives it.\r\n",
+        "Names shown here can be used in settings.json. Ctrl+Q quits.\r\n\r\n",
+    ));
+
+    let mut vt_parser = vt::Parser::new();
+    let mut input_parser = input::Parser::new();
+
+    loop {
+        let scratch = scratch_arena(None);
+        let Some(bytes) = sys::read_stdin(&scratch, Duration::MAX) else {
+            break;
+        };
+
+        let vt_iter = vt_parser.parse(&bytes);
+        let mut input_iter = input_parser.parse(vt_iter);
+
+        while let Some(input) = input_iter.next() {
+            match input {
+                input::Input::Keyboard(key) => {
+                    if key == kbmod::CTRL | vk::Q {
+                        sys::write_stdout("\r\n");
+                        return Ok(());
+                    }
+                    match keybind::describe(key) {
+                        Some(name) => sys::write_stdout(&format!("{name}\r\n")),
+                        // Arrives, but there is no way to write it down, so it
+                        // can't be bound to anything.
+                        None => sys::write_stdout("(arrives, but has no name to bind it by)\r\n"),
+                    }
+                }
+                // Ordinary typing. Reported too, so that a key producing
+                // nothing at all is clearly distinguishable from one that
+                // produces a character.
+                input::Input::Text(text) => {
+                    sys::write_stdout(&format!("text {text:?}\r\n"));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn print_version() {
@@ -377,9 +439,15 @@ fn draw(ctx: &mut Context, state: &mut State) {
     // Before anything else: while the panel has focus it forwards nearly every
     // key to the child, so its own shortcuts have to be claimed up front.
     draw_terminal_shortcuts(ctx, state);
+    // Same reason: while the completion list is open it needs a handful of
+    // keys that the text area would otherwise swallow.
+    completion::draw_completion_shortcuts(ctx, state);
 
     draw_menubar(ctx, state);
     draw_editor(ctx, state);
+    // Straight after the editor, so the list anchors to the text area and can
+    // be placed at the cursor.
+    completion::draw_completion(ctx, state);
     draw_terminal(ctx, state);
     draw_statusbar(ctx, state);
 
@@ -757,4 +825,3 @@ fn setup_terminal(tui: &mut Tui, state: &mut State, vt_parser: &mut vt::Parser) 
 
     RestoreModes
 }
-

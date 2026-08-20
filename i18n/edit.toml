@@ -2551,3 +2551,17 @@ pt-br = "Depois verifique se está no PATH, ou defina markdown.previewCommand."
 ru = "Затем добавьте его в PATH или задайте markdown.previewCommand."
 zh-hans = "然后确认它在 PATH 中，或设置 markdown.previewCommand。"
 zh-hant = "然後確認它在 PATH 中，或設定 markdown.previewCommand。"
+
+# Edit menu: complete the word being typed from the words already in the file
+[EditComplete]
+en = "Complete Word"
+de = "Wort vervollständigen"
+es = "Completar palabra"
+fr = "Compléter le mot"
+it = "Completa parola"
+ja = "単語を補完"
+ko = "단어 완성"
+pt-br = "Completar palavra"
+ru = "Дополнить слово"
+zh-hans = "补全单词"
+zh-hant = "補全單字"

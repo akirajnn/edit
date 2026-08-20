@@ -63,6 +63,63 @@ The same commands are available from the **Terminal** menu.
 
 The terminal panel works on **Windows (x64 and ARM64), macOS, and Linux**. On Windows it uses ConPTY; on macOS and Linux it uses the POSIX PTY API (`posix_openpt` / `fork` / `exec`).
 
+### Word completion
+
+<kbd>Alt</kbd>+<kbd>N</kbd> completes the word you are typing from the words already in the file.
+
+```
+┌────────────────────────────────────────────────────────┐
+│  1 │ let price_before_tax = 10.0;                      │
+│  2 │ let price_after_tax = price_bef                   │
+│  3 │                      ┌──────────────────┐         │
+│  4 │                      │ price_before_tax │         │
+│  5 │                      │ price_after_tax  │         │
+│    │                      └──────────────────┘         │
+└────────────────────────────────────────────────────────┘
+```
+
+No language server, no subprocess, nothing to install. The names you want to type are nearly always ones the file already contains, and matching is the same fuzzy scoring the file picker uses, so `pbt` finds `price_before_tax`.
+
+Key | Action
+--- | ---
+<kbd>Alt</kbd>+<kbd>N</kbd> | Open the list, then step down it
+<kbd>Alt</kbd>+<kbd>P</kbd> | Open it on the *last* entry, then step up
+<kbd>↑</kbd> / <kbd>↓</kbd> | Also move through it
+<kbd>Enter</kbd> or <kbd>Tab</kbd> | Take the highlighted word
+<kbd>Esc</kbd> | Dismiss
+
+One pair of keys both opens the list and walks through it, so the fingers never move to the arrow keys — press <kbd>Alt</kbd>+<kbd>N</kbd> once for the list and again for the next entry. <kbd>Alt</kbd>+<kbd>P</kbd> opens on the last entry, so either end is one keystroke away.
+
+The list never appears on its own, so it stays out of the way of ordinary typing. While it is open it claims only those keys — everything else goes to the buffer as usual, and the list narrows to whatever you have typed. Move off the word and it closes.
+
+**If those keys are taken, change them.** `Ctrl+Space` would be the conventional choice and is exactly what Microsoft's IME uses to switch languages, which is why it isn't the default:
+
+```jsonc
+"completion.next": "ctrl+e",
+"completion.prev": "ctrl+d"
+```
+
+Letters, digits, function keys and named keys (`space`, `tab`, `home`, `pageup`, …) can be bound, with any of `ctrl`, `alt` and `shift`. Punctuation cannot: a terminal has no way to send most <kbd>Ctrl</kbd>+punctuation combinations, so binding one would give you a shortcut that silently never fires — the editor refuses it rather than accepting it and doing nothing. An empty string switches a binding off.
+
+To find out what your terminal and your IME actually leave available:
+
+```
+edit --probe-keys
+```
+
+Press anything and it prints the name to put in `settings.json`, or tells you the key never arrived at all.
+
+Beyond the file's own words, you can add anything else worth offering — language keywords, names your project uses constantly — per language id:
+
+```jsonc
+"completion.keywords": {
+  "rust": ["fn", "let", "mut", "pub", "impl", "match", "struct", "enum", "trait", "async", "await"],
+  "csharp": ["public", "private", "static", "class", "var", "async", "await", "namespace"]
+}
+```
+
+The ids are the same ones `files.associations` uses. These aren't taken from the syntax definitions on purpose: the keywords there live inside regular expressions, so extracting them would break whenever a definition is edited — and a hand-written list can hold your own vocabulary as well as the language's.
+
 ### External file change detection
 
 Files opened in the editor are watched for modifications made by anything else — a build script, `git`, or an agent running in the terminal panel.
@@ -176,7 +233,17 @@ Open it from **File → Preferences**.
   "terminal.scrollback": 5000,
 
   // What renders the Markdown preview. Defaults to "glow".
-  "markdown.previewCommand": "glow -w 100 -s dark"
+  "markdown.previewCommand": "glow -w 100 -s dark",
+
+  // Extra completion candidates, on top of the words already in the file.
+  "completion.keywords": {
+    "rust": ["fn", "let", "mut", "pub", "impl", "match", "struct", "enum"]
+  },
+
+  // Which keys open and walk the completion list. Run `edit --probe-keys`
+  // to see what your terminal and IME leave available.
+  "completion.next": "alt+n",
+  "completion.prev": "alt+p"
 }
 ```
 
@@ -197,6 +264,12 @@ Markdown preview:
 
 * Needs an external renderer; `glow` is not bundled.
 * It renders once. Editing the buffer doesn't update an open preview — close and reopen it with <kbd>F7</kbd> twice.
+
+Word completion:
+
+* Candidates come from the file you are looking at, not from other open files or from anywhere on disk. It completes names, it doesn't know what they mean.
+* The candidate list is gathered when you open it, so words typed elsewhere in the file since then only appear next time.
+* Punctuation can't be bound as a shortcut — see above for why.
 
 Syntax highlighting:
 

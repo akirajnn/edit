@@ -218,6 +218,11 @@ pub struct State {
     /// Whether the panel held the focus as of the last frame.
     pub terminal_focused: bool,
 
+    /// The open completion list, if one is showing.
+    pub completion: Option<crate::completion::Completion>,
+    /// Set to open the completion list on the next frame.
+    pub wants_completion: Option<crate::completion::Opening>,
+
     pub osc_title_file_status: OscTitleFileStatus,
     pub osc_clipboard_sync: bool,
     pub osc_clipboard_always_send: bool,
@@ -292,6 +297,9 @@ impl State {
             terminal_height: TERMINAL_DEFAULT_HEIGHT,
             terminal_wants_focus: None,
             terminal_focused: false,
+
+            completion: None,
+            wants_completion: None,
 
             osc_title_file_status: Default::default(),
             osc_clipboard_sync: false,

@@ -23,6 +23,17 @@ pub struct Settings {
     pub terminal_scrollback: Option<usize>,
     /// Command that renders the Markdown preview. `None` means the default.
     pub markdown_preview_command: Option<String>,
+    /// Extra completion candidates per language id.
+    ///
+    /// Not derived from the syntax definitions: the keywords there live inside
+    /// regex alternations, so pulling them out would break whenever a
+    /// definition is edited. Written by hand here instead, which also means a
+    /// project can add terms of its own rather than only language keywords.
+    pub completion_keywords: Vec<(String, Vec<String>)>,
+    /// Key that opens the completion list and steps forward through it.
+    pub completion_next: Option<edit::input::InputKey>,
+    /// Key that opens it on the last entry and steps backward.
+    pub completion_prev: Option<edit::input::InputKey>,
 }
 
 struct SettingsCell(SemiRefCell<Settings>);
@@ -47,7 +58,46 @@ impl Settings {
             terminal_shell: None,
             terminal_scrollback: None,
             markdown_preview_command: None,
+            completion_keywords: Vec::new(),
+            // Filled in by `load`, which falls back to keys that no terminal
+            // or IME is known to take. They can't be `const`-parsed here.
+            completion_next: None,
+            completion_prev: None,
         }
+    }
+
+    /// Reads one key binding, or falls back to `default`.
+    ///
+    /// An unparseable key is an error rather than a silent fallback: the whole
+    /// point of the setting is that someone is reaching for a specific key,
+    /// and quietly binding a different one would be worse than saying no.
+    fn load_key(
+        root: json::Object<'_>,
+        name: &'static str,
+        default: &str,
+    ) -> apperr::Result<Option<edit::input::InputKey>> {
+        let Some(value) = root.get(name) else {
+            return Ok(crate::keybind::parse(default));
+        };
+
+        let Some(spec) = value.as_str() else {
+            return Err(apperr::Error::SettingsInvalid(name));
+        };
+
+        // An empty string switches the binding off entirely.
+        if spec.trim().is_empty() {
+            return Ok(None);
+        }
+
+        crate::keybind::parse(spec).map(Some).ok_or(apperr::Error::SettingsInvalid(name))
+    }
+
+    /// The configured extra candidates for a language, if any.
+    pub fn completion_keywords(&self, language_id: &str) -> &[String] {
+        self.completion_keywords
+            .iter()
+            .find(|(id, _)| id == language_id)
+            .map_or(&[], |(_, words)| &words[..])
     }
 
     pub fn borrow() -> Ref<'static, Settings> {
@@ -140,6 +190,42 @@ impl Settings {
                 self.markdown_preview_command = Some(command.to_string());
             }
         }
+
+        if let Some(keywords) = root.get("completion.keywords") {
+            let Some(keywords) = keywords.as_object() else {
+                return Err(apperr::Error::SettingsInvalid(
+                    "completion.keywords must be an object",
+                ));
+            };
+
+            for &(id, ref value) in keywords.iter() {
+                let Some(list) = value.as_array() else {
+                    return Err(apperr::Error::SettingsInvalid(
+                        "completion.keywords values must be arrays",
+                    ));
+                };
+
+                let mut words = Vec::with_capacity(list.len());
+                for word in list {
+                    let Some(word) = word.as_str() else {
+                        return Err(apperr::Error::SettingsInvalid(
+                            "completion.keywords entries must be strings",
+                        ));
+                    };
+                    if !word.is_empty() {
+                        words.push(word.to_string());
+                    }
+                }
+
+                self.completion_keywords.push((id.to_string(), words));
+            }
+        }
+
+        // Alt+N and Alt+P by default: `Ctrl+Space` is the conventional key and
+        // is exactly what Microsoft's IME takes, and the menu already claims
+        // Alt+F/E/V/T/H, so these are what's left that reads as next/previous.
+        self.completion_next = Self::load_key(root, "completion.next", "alt+n")?;
+        self.completion_prev = Self::load_key(root, "completion.prev", "alt+p")?;
 
         Ok(())
     }
@@ -412,7 +498,10 @@ mod tests {
         // setting comes after it and is the one that gets replaced.
         let source = "{\n    \"themes\": { \"theme\": { \"comment\": \"green\" } },\n    \"theme\": \"default\"\n}\n";
         let updated = set_theme_key(source, "muted");
-        assert!(updated.contains("\"themes\": { \"theme\": { \"comment\": \"green\" } }"), "{updated}");
+        assert!(
+            updated.contains("\"themes\": { \"theme\": { \"comment\": \"green\" } }"),
+            "{updated}"
+        );
         assert!(updated.contains("\"theme\": \"muted\""), "{updated}");
         assert!(!updated.contains("\"default\""), "{updated}");
     }

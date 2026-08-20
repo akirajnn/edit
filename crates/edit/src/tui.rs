@@ -2260,6 +2260,31 @@ impl<'a> Context<'a, '_> {
         self.textarea_internal(classname, TextBufferPayload::Textarea(tb));
     }
 
+    /// Where the text cursor sits inside the textarea created last.
+    ///
+    /// A textarea is a single node covering the whole editor, so anchoring a
+    /// floater to it puts the floater in its top-left corner. Anything that
+    /// wants to appear *at the cursor* -- a completion list, a tooltip --
+    /// needs the offset from that corner, which is the cursor's visual
+    /// position shifted by the margin and by however far the view is scrolled.
+    ///
+    /// Returns `None` if the last node isn't a textarea, which is a caller
+    /// mistake rather than a state worth handling.
+    pub fn textarea_cursor_offset(&self) -> Option<Point> {
+        let node = self.tree.last_node.borrow();
+        let NodeContent::Textarea(content) = &node.content else {
+            return None;
+        };
+
+        let tb = content.buffer.borrow();
+        let cursor = tb.cursor_visual_pos();
+
+        Some(Point {
+            x: tb.margin_width() + cursor.x - content.scroll_offset.x,
+            y: cursor.y - content.scroll_offset.y,
+        })
+    }
+
     /// Embeds a terminal.
     ///
     /// The caller owns the [`Terminal`] and is responsible for spawning it;

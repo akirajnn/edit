@@ -162,6 +162,13 @@ fn draw_menu_edit(ctx: &mut Context, state: &mut State) {
         tb.select_all();
         ctx.needs_rerender();
     }
+    // Deferred rather than done here, because opening the list needs the
+    // buffer and this function still has it borrowed. It also gives the menu
+    // a frame to close in first, so the list isn't drawn underneath it.
+    let complete_key = Settings::borrow().completion_next.unwrap_or(vk::NULL);
+    if ctx.menubar_menu_button(loc(LocId::EditComplete), 'W', complete_key) {
+        state.wants_completion = Some(crate::completion::Opening::First);
+    }
     ctx.menubar_menu_end();
 }
 

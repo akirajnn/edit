@@ -18,7 +18,7 @@ use crate::vt;
 /// Of course you could just translate on the ABI boundary, but my hope is that this
 /// design lets me realize some restrictions early on that I can't foresee yet.
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct InputKey(u32);
 
 impl InputKey {

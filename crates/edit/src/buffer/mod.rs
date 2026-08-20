@@ -45,9 +45,9 @@ use crate::framebuffer::{Attributes, Framebuffer, IndexedColor};
 use crate::helpers::*;
 use crate::lsh::cache::HighlighterCache;
 use crate::lsh::{HighlightKind, Highlighter, Language};
-use crate::theme;
 use crate::oklab::StraightRgba;
 use crate::simd::memchr2;
+use crate::theme;
 use crate::unicode::{self, Cursor, MeasurementConfig};
 use crate::{icu, simd};
 
@@ -488,6 +488,15 @@ impl TextBuffer {
 
     /// Gets the visual cursor position, that is,
     /// the position in laid out rows and columns.
+    /// The cursor's byte offset into the document.
+    ///
+    /// The logical position counts grapheme clusters and the visual one counts
+    /// display columns, so neither can be combined with a byte length. This is
+    /// the one that can.
+    pub fn cursor_offset(&self) -> usize {
+        self.cursor.offset
+    }
+
     pub fn cursor_visual_pos(&self) -> Point {
         self.cursor.visual_pos
     }
