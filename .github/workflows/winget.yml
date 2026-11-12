@@ -16,8 +16,9 @@ jobs:
     env:
       WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
 
-    # Only submit stable releases
-    if: ${{ !github.event.release.prerelease }}
+    # Only submit stable releases, and only from upstream — this fork's releases
+    # are not the Microsoft.Edit WinGet package and must never be submitted.
+    if: ${{ !github.event.release.prerelease && github.repository == 'microsoft/edit' }}
     steps:
       - name: Submit package using wingetcreate
         run: |
